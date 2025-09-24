@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { Upload, X, Image as ImageIcon, Video, Gamepad2 } from "lucide-react";
 import {
@@ -25,16 +25,7 @@ interface CreatePostDialogProps {
   onPostCreated: (post: any) => void;
 }
 
-const GAMES = [
-  { id: 1, name: "Grand Theft Auto V", slug: "gta-v" },
-  { id: 2, name: "Red Dead Redemption 2", slug: "rdr2" },
-  { id: 3, name: "The Last of Us", slug: "tlou" },
-  { id: 4, name: "God of War", slug: "gow" },
-  { id: 5, name: "Valorant", slug: "valorant" },
-  { id: 6, name: "Fortnite", slug: "fortnite" },
-  { id: 7, name: "Minecraft", slug: "minecraft" },
-  { id: 8, name: "Apex Legends", slug: "apex-legends" },
-];
+// Games will be loaded from database
 
 export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: CreatePostDialogProps) {
   const { toast } = useToast();
@@ -43,6 +34,39 @@ export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: 
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [games, setGames] = useState<any[]>([]);
+  const [loadingGames, setLoadingGames] = useState(true);
+
+  // Load games from database
+  useEffect(() => {
+    const loadGames = async () => {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('games')
+          .select('id, name, slug')
+          .order('name')
+          .limit(50);
+        
+        if (error) throw error;
+        setGames(data || []);
+      } catch (error) {
+        console.error('Error loading games:', error);
+        // Fallback games if database fails
+        setGames([
+          { id: 1, name: "Grand Theft Auto V", slug: "gta-v" },
+          { id: 2, name: "Valorant", slug: "valorant" },
+          { id: 3, name: "Fortnite", slug: "fortnite" },
+          { id: 4, name: "Minecraft", slug: "minecraft" },
+          { id: 5, name: "Apex Legends", slug: "apex-legends" },
+        ]);
+      } finally {
+        setLoadingGames(false);
+      }
+    };
+
+    loadGames();
+  }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -116,10 +140,18 @@ export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: 
           // Upload to Supabase Storage
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from('posts')
-            .upload(fileName, file);
+            .upload(fileName, file, {
+              cacheControl: '3600',
+              upsert: false
+            });
 
           if (uploadError) {
             console.error("Upload error:", uploadError);
+            toast({
+              title: "Upload failed",
+              description: `Failed to upload ${file.name}: ${uploadError.message}`,
+              variant: "destructive"
+            });
             continue;
           }
 
@@ -211,20 +243,26 @@ export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: 
                   {selectedGame && (
                     <div className="flex items-center gap-2">
                       <Gamepad2 className="h-4 w-4" />
-                      {GAMES.find(g => g.id.toString() === selectedGame)?.name}
+                      {games.find(g => g.id.toString() === selectedGame)?.name}
                     </div>
                   )}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {GAMES.map((game) => (
-                  <SelectItem key={game.id} value={game.id.toString()}>
-                    <div className="flex items-center gap-2">
-                      <Gamepad2 className="h-4 w-4" />
-                      {game.name}
-                    </div>
-                  </SelectItem>
-                ))}
+                {loadingGames ? (
+                  <SelectItem value="" disabled>Loading games...</SelectItem>
+                ) : games.length > 0 ? (
+                  games.map((game) => (
+                    <SelectItem key={game.id} value={game.id.toString()}>
+                      <div className="flex items-center gap-2">
+                        <Gamepad2 className="h-4 w-4" />
+                        {game.name}
+                      </div>
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="" disabled>No games available</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>

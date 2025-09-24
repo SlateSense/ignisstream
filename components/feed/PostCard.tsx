@@ -34,22 +34,17 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
       return;
     }
 
+    // Optimistic update
+    const newLikedState = !isLiked;
+    const newLikeCount = newLikedState ? likeCount + 1 : likeCount - 1;
+    
+    setIsLiked(newLikedState);
+    setLikeCount(newLikeCount);
+
     const supabase = createClient();
     
     try {
-      if (isLiked) {
-        // Unlike
-        const { error } = await supabase
-          .from("likes")
-          .delete()
-          .eq("post_id", post.id)
-          .eq("user_id", currentUser.id);
-        
-        if (error) throw error;
-        
-        setIsLiked(false);
-        setLikeCount(likeCount - 1);
-      } else {
+      if (newLikedState) {
         // Like
         const { error } = await supabase
           .from("likes")
@@ -59,11 +54,21 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
           });
         
         if (error) throw error;
+      } else {
+        // Unlike
+        const { error } = await supabase
+          .from("likes")
+          .delete()
+          .eq("post_id", post.id)
+          .eq("user_id", currentUser.id);
         
-        setIsLiked(true);
-        setLikeCount(likeCount + 1);
+        if (error) throw error;
       }
     } catch (error: any) {
+      // Revert optimistic update on error
+      setIsLiked(!newLikedState);
+      setLikeCount(likeCount);
+      
       console.error("Error toggling like:", error);
       toast({
         title: "Error",
@@ -83,19 +88,14 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
       return;
     }
 
+    // Optimistic update
+    const newBookmarkedState = !isBookmarked;
+    setIsBookmarked(newBookmarkedState);
+
     const supabase = createClient();
     
     try {
-      if (isBookmarked) {
-        const { error } = await supabase
-          .from("bookmarks")
-          .delete()
-          .eq("post_id", post.id)
-          .eq("user_id", currentUser.id);
-        
-        if (error) throw error;
-        setIsBookmarked(false);
-      } else {
+      if (newBookmarkedState) {
         const { error } = await supabase
           .from("bookmarks")
           .insert({
@@ -104,14 +104,24 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
           });
         
         if (error) throw error;
-        setIsBookmarked(true);
+      } else {
+        const { error } = await supabase
+          .from("bookmarks")
+          .delete()
+          .eq("post_id", post.id)
+          .eq("user_id", currentUser.id);
+        
+        if (error) throw error;
       }
       
       toast({
-        title: isBookmarked ? "Removed from bookmarks" : "Added to bookmarks",
-        description: isBookmarked ? "Post removed from your collection" : "Post saved to your collection",
+        title: newBookmarkedState ? "Added to bookmarks" : "Removed from bookmarks",
+        description: newBookmarkedState ? "Post saved to your collection" : "Post removed from your collection",
       });
     } catch (error: any) {
+      // Revert optimistic update on error
+      setIsBookmarked(!newBookmarkedState);
+      
       console.error("Error toggling bookmark:", error);
       toast({
         title: "Error",
@@ -188,19 +198,33 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
 
         {/* Media */}
         {primaryAsset && (
-          <div className="relative aspect-video bg-secondary">
+          <div className="relative aspect-video bg-secondary overflow-hidden">
             {primaryAsset.type === "image" ? (
-              <img
-                src={primaryAsset.storage_path || primaryAsset.thumbnail_url}
+              <Image
+                src={primaryAsset.storage_path || primaryAsset.thumbnail_url || "/placeholder-image.jpg"}
                 alt="Gaming moment"
-                className="w-full h-full object-cover"
+                fill
+                className="object-cover transition-opacity duration-300"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                priority={false}
+                loading="lazy"
               />
             ) : primaryAsset.type === "video" && primaryAsset.mux_playback_id ? (
               <video
                 src={`https://stream.mux.com/${primaryAsset.mux_playback_id}.m3u8`}
                 poster={primaryAsset.thumbnail_url}
                 controls
-                className="w-full h-full"
+                preload="metadata"
+                className="w-full h-full object-cover"
+              />
+            ) : primaryAsset.thumbnail_url ? (
+              <Image
+                src={primaryAsset.thumbnail_url}
+                alt="Gaming moment preview"
+                fill
+                className="object-cover"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                loading="lazy"
               />
             ) : null}
           </div>
@@ -226,7 +250,7 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
             <Link href={`/post/${post.id}`}>
               <Button variant="ghost" size="sm">
                 <MessageCircle className="h-5 w-5 mr-1" />
-                {post.comment_count > 0 && post.comment_count}
+                {post.comments_count > 0 && post.comments_count}
               </Button>
             </Link>
 
