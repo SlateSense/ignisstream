@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { 
+  Flame,
   Gamepad2, 
   Menu, 
   X, 
@@ -19,7 +19,10 @@ import {
   Compass,
   Trophy,
   Users,
-  Zap
+  Zap,
+  Swords,
+  ListChecks,
+  BarChart3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,10 +37,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { createClient } from "@/lib/supabase/client";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 export default function AuthNavbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const { user, profile, signOut } = useAuth();
   const router = useRouter();
 
@@ -45,6 +52,42 @@ export default function AuthNavbar() {
     await signOut();
     router.push("/");
   };
+
+  // Load notification counts on demand (only when needed)
+  useEffect(() => {
+    if (!user) return;
+
+    const loadCounts = async () => {
+      try {
+        const supabase = createClient();
+        
+        // Load only unread counts with optimized queries
+        const [notificationsResult, messagesResult] = await Promise.all([
+          supabase
+            .from('notifications')
+            .select('id', { count: 'exact', head: true })
+            .eq('recipient_id', user.id)
+            .eq('read', false),
+          supabase
+            .from('messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('recipient_id', user.id)
+            .eq('read', false)
+        ]);
+        
+        setUnreadNotifications(notificationsResult.count || 0);
+        setUnreadMessages(messagesResult.count || 0);
+      } catch (error) {
+        console.error('Error loading counts:', error);
+        setUnreadNotifications(0);
+        setUnreadMessages(0);
+      }
+    };
+
+    // Delay loading to not block initial render
+    const timer = setTimeout(loadCounts, 500);
+    return () => clearTimeout(timer);
+  }, [user]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,18 +124,33 @@ export default function AuthNavbar() {
                 </form>
               </div>
 
-              <div className="hidden md:flex items-center space-x-6">
-                <Link href="/feed" className="text-foreground/80 hover:text-foreground transition">
-                  <Home className="h-5 w-5" />
+              <div className="hidden md:flex items-center space-x-4">
+                <Link href="/hub" className="text-foreground/80 hover:text-foreground transition inline-flex items-center gap-1 text-sm">
+                  <Flame className="h-4 w-4" />
+                  Hub
                 </Link>
-                <Link href="/explore" className="text-foreground/80 hover:text-foreground transition">
-                  <Compass className="h-5 w-5" />
+                <Link href="/feed" className="text-foreground/80 hover:text-foreground transition inline-flex items-center gap-1 text-sm">
+                  <Home className="h-4 w-4" />
+                  Feed
                 </Link>
-                <Link href="/servers" className="text-foreground/80 hover:text-foreground transition">
-                  <Users className="h-5 w-5" />
+                <Link href="/forums" className="text-foreground/80 hover:text-foreground transition inline-flex items-center gap-1 text-sm">
+                  <ListChecks className="h-4 w-4" />
+                  Forums
+                </Link>
+                <Link href="/matchmaking" className="text-foreground/80 hover:text-foreground transition inline-flex items-center gap-1 text-sm">
+                  <Swords className="h-4 w-4" />
+                  Match
+                </Link>
+                <Link href="/leaderboards" className="text-foreground/80 hover:text-foreground transition inline-flex items-center gap-1 text-sm">
+                  <BarChart3 className="h-4 w-4" />
+                  Boards
+                </Link>
+                <Link href="/streaming" className="text-foreground/80 hover:text-foreground transition inline-flex items-center gap-1 text-sm">
+                  <Zap className="h-4 w-4" />
+                  Live
                 </Link>
                 
-                <Button size="sm" className="bg-gradient-to-r from-gaming-purple to-gaming-pink hover:opacity-90">
+                <Button size="sm" className="bg-gradient-to-r from-gaming-purple to-gaming-pink hover:opacity-90" onClick={() => router.push("/feed")}>
                   <Plus className="mr-2 h-4 w-4" />
                   Share
                 </Button>
@@ -101,20 +159,26 @@ export default function AuthNavbar() {
                   <Link href="/messages">
                     <Button size="icon" variant="ghost" className="relative">
                       <MessageCircle className="h-5 w-5" />
-                      <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 bg-gradient-to-r from-gaming-purple to-gaming-pink text-xs">
-                        3
-                      </Badge>
+                      {unreadMessages > 0 && (
+                        <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 bg-gradient-to-r from-gaming-purple to-gaming-pink text-xs">
+                          {unreadMessages > 99 ? '99+' : unreadMessages}
+                        </Badge>
+                      )}
                     </Button>
                   </Link>
 
                   <Link href="/notifications">
                     <Button size="icon" variant="ghost" className="relative">
                       <Bell className="h-5 w-5" />
-                      <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 bg-gradient-to-r from-gaming-purple to-gaming-pink text-xs">
-                        5
-                      </Badge>
+                      {unreadNotifications > 0 && (
+                        <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 bg-gradient-to-r from-gaming-purple to-gaming-pink text-xs">
+                          {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                        </Badge>
+                      )}
                     </Button>
                   </Link>
+
+                  <ThemeToggle />
 
                   {/* Profile Dropdown */}
                   <DropdownMenu>
@@ -220,11 +284,7 @@ export default function AuthNavbar() {
 
         {/* Mobile Menu */}
         {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="md:hidden py-4 space-y-4"
-          >
+          <div className="md:hidden py-4 space-y-4">
             {user ? (
               <>
                 <form onSubmit={handleSearch} className="relative">
@@ -239,11 +299,23 @@ export default function AuthNavbar() {
                 <Link href="/feed" className="block text-foreground/80 hover:text-foreground transition">
                   Feed
                 </Link>
+                <Link href="/hub" className="block text-foreground/80 hover:text-foreground transition">
+                  Hub
+                </Link>
                 <Link href="/explore" className="block text-foreground/80 hover:text-foreground transition">
                   Explore
                 </Link>
+                <Link href="/forums" className="block text-foreground/80 hover:text-foreground transition">
+                  Forums
+                </Link>
+                <Link href="/matchmaking" className="block text-foreground/80 hover:text-foreground transition">
+                  Matchmaking
+                </Link>
                 <Link href="/servers" className="block text-foreground/80 hover:text-foreground transition">
                   Servers
+                </Link>
+                <Link href="/leaderboards" className="block text-foreground/80 hover:text-foreground transition">
+                  Leaderboards
                 </Link>
                 <Link href="/messages" className="block text-foreground/80 hover:text-foreground transition">
                   Messages
@@ -286,7 +358,7 @@ export default function AuthNavbar() {
                 </div>
               </>
             )}
-          </motion.div>
+          </div>
         )}
       </div>
     </nav>

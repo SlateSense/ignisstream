@@ -2,54 +2,72 @@
 
 import { motion } from "framer-motion";
 import { 
-  Video, 
-  Users, 
-  MessageSquare, 
-  Trophy, 
-  Sparkles, 
-  Zap,
-  Upload,
-  Share2,
-  Edit3
+  BadgeCheck,
+  Clapperboard,
+  MessageSquare,
+  Radio,
+  Shield,
+  Swords,
+  Trophy,
+  Users,
+  Video
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 const features = [
   {
     icon: Video,
-    title: "Built-in Video Editor",
-    description: "Edit your clips with our powerful in-browser editor. Trim, crop, add text, and create stunning highlights without any software.",
-    gradient: "from-gaming-purple to-gaming-pink"
-  },
-  {
-    icon: Sparkles,
-    title: "AI Auto-Clips",
-    description: "Our AI automatically detects and clips your best gaming moments. Never miss an epic play again.",
-    gradient: "from-gaming-pink to-gaming-blue"
-  },
-  {
-    icon: Users,
-    title: "Find Teammates",
-    description: "Connect with players who match your skill level and playstyle. Build your dream squad instantly.",
-    gradient: "from-gaming-blue to-gaming-cyan"
+    title: "Game Clip Uploads",
+    description: "Upload clips, highlights, and tactical breakdowns with premium social sharing built for gaming content.",
+    gradient: "from-gaming-purple to-gaming-blue"
   },
   {
     icon: MessageSquare,
-    title: "Real-time Chat",
-    description: "Chat with friends, coordinate games, and share strategies. Voice notes, DMs, and group chats included.",
+    title: "Real-Time Lobbies",
+    description: "Jump into lobby channels, direct chats, and squad rooms with status-aware communication tools.",
+    gradient: "from-gaming-blue to-gaming-cyan"
+  },
+  {
+    icon: Swords,
+    title: "Matchmaking + Tournaments",
+    description: "Queue with skill filters, build squads, and join events with streamlined competitive workflows.",
     gradient: "from-gaming-cyan to-gaming-green"
   },
   {
-    icon: Trophy,
-    title: "Earn Ignis Points",
-    description: "Get rewarded for sharing, commenting, and engaging. Unlock badges, avatars, and exclusive perks.",
+    icon: Users,
+    title: "Clans & Guilds",
+    description: "Create gamer groups with custom tags, shared goals, and role-based community collaboration.",
     gradient: "from-gaming-green to-gaming-purple"
   },
   {
-    icon: Share2,
-    title: "Cross-Platform Sharing",
-    description: "Share your moments across all social platforms with one click. Auto-generated thumbnails and hashtags included.",
-    gradient: "from-gaming-purple to-gaming-blue"
+    icon: Trophy,
+    title: "Leaderboards & Badges",
+    description: "Track ranked progress, unlock achievement badges, and flex milestone stats across your profile.",
+    gradient: "from-gaming-purple to-gaming-pink"
+  },
+  {
+    icon: Radio,
+    title: "Streaming Integration",
+    description: "Connect live channels, sync stream presence, and surface broadcasts directly in your social hub.",
+    gradient: "from-gaming-pink to-gaming-blue"
+  },
+  {
+    icon: BadgeCheck,
+    title: "Gamer Identity",
+    description: "Use customizable gamer tags, profile stats, and themed reactions that feel native to gaming culture.",
+    gradient: "from-gaming-blue to-gaming-purple"
+  },
+  {
+    icon: Clapperboard,
+    title: "Forums by Game",
+    description: "Browse organized discussions per title for strategies, patch notes, and community highlights.",
+    gradient: "from-gaming-cyan to-gaming-blue"
+  },
+  {
+    icon: Shield,
+    title: "Accessible by Design",
+    description: "Responsive layouts, strong contrast, and keyboard focus support keep every gamer included.",
+    gradient: "from-gaming-green to-gaming-cyan"
   }
 ];
 
@@ -70,7 +88,7 @@ export default function Features() {
             </span>
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            From capturing moments to building communities, we've got all the tools you need.
+            From capturing moments to building communities, we&apos;ve got all the tools you need.
           </p>
         </motion.div>
 

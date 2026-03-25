@@ -17,6 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
+import { useAchievements } from "@/components/achievements/AchievementProvider";
+import { useHashtags } from "@/components/hashtags/HashtagProvider";
 import { cn } from "@/lib/utils";
 
 interface CreatePostDialogProps {
@@ -29,6 +31,8 @@ interface CreatePostDialogProps {
 
 export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: CreatePostDialogProps) {
   const { toast } = useToast();
+  const { checkAchievements } = useAchievements();
+  const { extractHashtags, addHashtagsToPost } = useHashtags();
   const [caption, setCaption] = useState("");
   const [selectedGame, setSelectedGame] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -37,35 +41,10 @@ export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: 
   const [games, setGames] = useState<any[]>([]);
   const [loadingGames, setLoadingGames] = useState(true);
 
-  // Load games from database
   useEffect(() => {
-    const loadGames = async () => {
-      try {
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from('games')
-          .select('id, name, slug')
-          .order('name')
-          .limit(50);
-        
-        if (error) throw error;
-        setGames(data || []);
-      } catch (error) {
-        console.error('Error loading games:', error);
-        // Fallback games if database fails
-        setGames([
-          { id: 1, name: "Grand Theft Auto V", slug: "gta-v" },
-          { id: 2, name: "Valorant", slug: "valorant" },
-          { id: 3, name: "Fortnite", slug: "fortnite" },
-          { id: 4, name: "Minecraft", slug: "minecraft" },
-          { id: 5, name: "Apex Legends", slug: "apex-legends" },
-        ]);
-      } finally {
-        setLoadingGames(false);
-      }
-    };
-
-    loadGames();
+    // Games table doesn't exist yet - disable for now
+    setGames([]);
+    setLoadingGames(false);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -112,80 +91,22 @@ export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: 
       
       if (!user) throw new Error("Not authenticated");
 
-      // Create the post
+      // Create the post first (simplified - no file upload for now)
       const { data: post, error: postError } = await supabase
         .from("posts")
         .insert({
           author_id: user.id,
           caption: caption.trim(),
-          game_id: selectedGame ? parseInt(selectedGame) : null,
+          content: caption.trim(),
           visibility: "public"
         })
         .select(`
           *,
-          author:profiles!author_id(*),
-          game:games(*)
+          author:profiles!author_id(id, username, display_name, avatar_url)
         `)
         .single();
 
       if (postError) throw postError;
-
-      // Upload files if any
-      if (files.length > 0) {
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const fileExt = file.name.split('.').pop();
-          const fileName = `${user.id}/${post.id}/${Date.now()}.${fileExt}`;
-          
-          // Upload to Supabase Storage
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('posts')
-            .upload(fileName, file, {
-              cacheControl: '3600',
-              upsert: false
-            });
-
-          if (uploadError) {
-            console.error("Upload error:", uploadError);
-            toast({
-              title: "Upload failed",
-              description: `Failed to upload ${file.name}: ${uploadError.message}`,
-              variant: "destructive"
-            });
-            continue;
-          }
-
-          // Get public URL
-          const { data: { publicUrl } } = supabase.storage
-            .from('posts')
-            .getPublicUrl(fileName);
-
-          // Create asset record
-          const { data: asset, error: assetError } = await supabase
-            .from("assets")
-            .insert({
-              type: file.type.startsWith('image/') ? 'image' : 'video',
-              storage_path: publicUrl,
-              status: 'ready'
-            })
-            .select()
-            .single();
-
-          if (assetError) {
-            console.error("Asset error:", assetError);
-            continue;
-          }
-
-          // Link asset to post
-          await supabase
-            .from("post_assets")
-            .insert({
-              post_id: post.id,
-              asset_id: asset.id,
-              sort_order: i
-            });
-        }
-      }
 
       // Reset form
       setCaption("");
@@ -193,7 +114,18 @@ export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: 
       setFiles([]);
       setPreviews([]);
       
+      // Extract and add hashtags
+      const hashtags = extractHashtags(caption);
+      if (hashtags.length > 0) {
+        await addHashtagsToPost(post.id.toString(), hashtags);
+      }
+      
       onPostCreated(post);
+      
+      // Check for achievements after post creation
+      setTimeout(() => {
+        checkAchievements();
+      }, 1000);
       
       toast({
         title: "Post created!",
@@ -250,7 +182,7 @@ export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: 
               </SelectTrigger>
               <SelectContent>
                 {loadingGames ? (
-                  <SelectItem value="" disabled>Loading games...</SelectItem>
+                  <SelectItem value="loading" disabled>Loading games...</SelectItem>
                 ) : games.length > 0 ? (
                   games.map((game) => (
                     <SelectItem key={game.id} value={game.id.toString()}>
@@ -261,7 +193,7 @@ export default function CreatePostDialog({ open, onOpenChange, onPostCreated }: 
                     </SelectItem>
                   ))
                 ) : (
-                  <SelectItem value="" disabled>No games available</SelectItem>
+                  <SelectItem value="none" disabled>No games available</SelectItem>
                 )}
               </SelectContent>
             </Select>

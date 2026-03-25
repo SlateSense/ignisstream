@@ -2,19 +2,25 @@ import { type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
+  // Only apply Supabase session middleware for now
+  // Security middleware was causing redirect loops
   return await updateSession(request)
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     * - api routes that don't need auth
-     */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/feed/:path*',
+    '/messages/:path*',
+    '/notifications/:path*',
+    '/profile/:path*',
+    '/settings/:path*',
+    '/bookmarks/:path*',
+    '/post/:path*',
+    '/editor/:path*',
+    '/servers/:path*',
+    '/teams/:path*',
+    '/tournaments/:path*',
+    '/matchmaking/:path*',
+    '/achievements/:path*',
   ],
 }

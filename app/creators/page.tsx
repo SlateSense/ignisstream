@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Search, Users, Trophy, Sparkles, TrendingUp, Video, Heart } from "lucide-react";
 import Link from "next/link";
@@ -10,24 +10,79 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { mockUsers } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
+
+interface Creator {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_url?: string;
+  bio?: string;
+  created_at: string;
+  followers: number;
+  posts: number;
+  likes: number;
+  verified: boolean;
+  streaming: boolean;
+  category: string;
+}
 
 export default function CreatorsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [followingStatus, setFollowingStatus] = useState<{ [key: string]: boolean }>({});
+  const [creators, setCreators] = useState<Creator[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  // Extended creator data
-  const creators = mockUsers.map(user => ({
-    ...user,
-    followers: Math.floor(Math.random() * 100000) + 1000,
-    posts: Math.floor(Math.random() * 1000) + 50,
-    likes: Math.floor(Math.random() * 500000) + 10000,
-    verified: Math.random() > 0.5,
-    streaming: Math.random() > 0.7,
-    category: ["Gaming", "Speedrun", "Tutorial", "Entertainment"][Math.floor(Math.random() * 4)]
-  }));
+  // Load creators from database
+  useEffect(() => {
+    const loadCreators = async () => {
+      try {
+        const supabase = createClient();
+        const { data: profiles, error } = await supabase
+          .from('profiles')
+          .select(`
+            id,
+            username,
+            display_name,
+            avatar_url,
+            bio,
+            created_at
+          `)
+          .limit(50);
 
-  const filteredCreators = creators.filter(creator =>
+        if (error) throw error;
+
+        // Transform profiles to creators with additional data
+        const transformedCreators: Creator[] = (profiles || []).map(user => ({
+          ...user,
+          display_name: user.display_name || user.username,
+          followers: Math.floor(Math.random() * 100000) + 1000,
+          posts: Math.floor(Math.random() * 1000) + 50,
+          likes: Math.floor(Math.random() * 500000) + 10000,
+          verified: Math.random() > 0.8,
+          streaming: Math.random() > 0.9,
+          category: ["Gaming", "Speedrun", "Tutorial", "Entertainment"][Math.floor(Math.random() * 4)]
+        }));
+
+        setCreators(transformedCreators);
+      } catch (error) {
+        console.error('Error loading creators:', error);
+        toast({
+          title: "Error loading creators",
+          description: "Unable to load creator profiles. Please try again.",
+          variant: "destructive"
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCreators();
+  }, [toast]);
+
+  const filteredCreators = creators.filter((creator: Creator) =>
     creator.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     creator.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
     creator.bio?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -40,7 +95,7 @@ export default function CreatorsPage() {
     }));
   };
 
-  const CreatorCard = ({ creator, index }: any) => (
+  const CreatorCard = ({ creator, index }: { creator: Creator; index: number }) => (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -161,20 +216,44 @@ export default function CreatorsPage() {
           </TabsList>
 
           <TabsContent value="featured">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredCreators
-                .sort((a, b) => b.followers - a.followers)
-                .map((creator, index) => (
-                  <CreatorCard key={creator.id} creator={creator} index={index} />
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[...Array(6)].map((_, i) => (
+                  <Card key={i} className="h-80 animate-pulse">
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-16 h-16 bg-muted rounded-full"></div>
+                        <div>
+                          <div className="w-24 h-4 bg-muted rounded mb-2"></div>
+                          <div className="w-20 h-3 bg-muted rounded"></div>
+                        </div>
+                      </div>
+                      <div className="w-full h-3 bg-muted rounded mb-4"></div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="w-full h-8 bg-muted rounded"></div>
+                        <div className="w-full h-8 bg-muted rounded"></div>
+                        <div className="w-full h-8 bg-muted rounded"></div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
-            </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredCreators
+                  .sort((a: Creator, b: Creator) => b.followers - a.followers)
+                  .map((creator: Creator, index: number) => (
+                    <CreatorCard key={creator.id} creator={creator} index={index} />
+                  ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="trending">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredCreators
-                .sort((a, b) => b.likes - a.likes)
-                .map((creator, index) => (
+                .sort((a: Creator, b: Creator) => b.likes - a.likes)
+                .map((creator: Creator, index: number) => (
                   <CreatorCard key={creator.id} creator={creator} index={index} />
                 ))}
             </div>
@@ -183,8 +262,8 @@ export default function CreatorsPage() {
           <TabsContent value="new">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredCreators
-                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                .map((creator, index) => (
+                .sort((a: Creator, b: Creator) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                .map((creator: Creator, index: number) => (
                   <CreatorCard key={creator.id} creator={creator} index={index} />
                 ))}
             </div>

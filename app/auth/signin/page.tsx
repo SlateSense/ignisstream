@@ -55,22 +55,30 @@ export default function SignInPage() {
   };
 
   const handleOAuthSignIn = async (provider: 'google' | 'discord') => {
+    setLoading(true);
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
+          redirectTo: `${window.location.origin}/auth/callback`,
+          skipBrowserRedirect: false,
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(`OAuth error: ${error.message}. Make sure ${provider} is enabled in your Supabase project settings.`);
+      }
+      
+      // The browser will redirect, so we don't need to do anything else
     } catch (error: any) {
+      console.error(`${provider} OAuth error:`, error);
       toast({
         title: "Sign in failed",
-        description: error.message || "Something went wrong with OAuth sign in.",
+        description: error.message || `Failed to sign in with ${provider}. Please ensure it's configured in Supabase.`,
         variant: "destructive"
       });
+      setLoading(false);
     }
   };
 

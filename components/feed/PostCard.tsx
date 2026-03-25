@@ -1,28 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { Heart, MessageCircle, Share2, Bookmark, MoreHorizontal, Gamepad2 } from "lucide-react";
+import { Heart, MessageCircle, Share2, Bookmark, MoreHorizontal, Gamepad2, Edit3, Trash2, Flag } from "lucide-react";
+import Comments from "./Comments";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 
 interface PostCardProps {
   post: any;
-  currentUser: any;
+  currentUser?: any;
   onUpdate?: () => void;
+  onPostDeleted?: () => void | Promise<void>;
+  onPostUpdated?: () => void | Promise<void>;
 }
 
-export default function PostCard({ post, currentUser, onUpdate }: PostCardProps) {
+export default function PostCard({ post, currentUser, onUpdate, onPostDeleted, onPostUpdated }: PostCardProps) {
   const { toast } = useToast();
   const [isLiked, setIsLiked] = useState(post.is_liked || false);
   const [likeCount, setLikeCount] = useState(post.likes_count || 0);
   const [isBookmarked, setIsBookmarked] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  
+  // Check if current user owns this post
+  const isOwner = currentUser && post.author_id === currentUser.id;
 
   const handleLike = async () => {
     if (!currentUser) {
@@ -152,8 +169,67 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
     }
   };
 
-  // Get first asset for preview (if any)
-  const primaryAsset = post.assets?.[0]?.asset;
+  const handleEdit = () => {
+    // Navigate to edit page or open edit dialog
+    window.location.href = `/post/${post.id}/edit`;
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    const supabase = createClient();
+    
+    try {
+      // Delete the post
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', post.id)
+        .eq('author_id', currentUser.id); // Ensure only owner can delete
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Post deleted",
+        description: "Your post has been successfully deleted.",
+      });
+      
+      // Refresh the feed
+      if (onUpdate) {
+        onUpdate();
+      }
+      if (onPostDeleted) {
+        await onPostDeleted();
+      }
+      if (onPostUpdated) {
+        await onPostUpdated();
+      }
+      
+    } catch (error: any) {
+      console.error('Error deleting post:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete post. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
+  const handleReport = () => {
+    toast({
+      title: "Report submitted",
+      description: "Thank you for reporting. We'll review this content.",
+    });
+  };
+
+  useEffect(() => {
+    setIsLiked(post.is_liked || false);
+    setLikeCount(post.likes_count || 0);
+  }, [post.id, post.is_liked, post.likes_count]);
+
+  const primaryAsset = post.assets?.[0]?.asset || post.assets?.[0] || null;
 
   return (
     <Card className="overflow-hidden hover:shadow-lg transition-shadow">
@@ -184,9 +260,37 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
               </div>
             </div>
           </div>
-          <Button variant="ghost" size="icon">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {isOwner ? (
+                <>
+                  <DropdownMenuItem onClick={handleEdit}>
+                    <Edit3 className="mr-2 h-4 w-4" />
+                    Edit Post
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Post
+                  </DropdownMenuItem>
+                </>
+              ) : (
+                <>
+                  <DropdownMenuItem onClick={handleReport}>
+                    <Flag className="mr-2 h-4 w-4" />
+                    Report Post
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </CardHeader>
 
@@ -247,12 +351,14 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
               {likeCount > 0 && likeCount}
             </Button>
             
-            <Link href={`/post/${post.id}`}>
-              <Button variant="ghost" size="sm">
-                <MessageCircle className="h-5 w-5 mr-1" />
-                {post.comments_count > 0 && post.comments_count}
-              </Button>
-            </Link>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => setCommentsOpen(true)}
+            >
+              <MessageCircle className="h-5 w-5 mr-1" />
+              {post.comments_count > 0 && post.comments_count}
+            </Button>
 
             <Button variant="ghost" size="sm" onClick={handleShare}>
               <Share2 className="h-5 w-5" />
@@ -272,6 +378,43 @@ export default function PostCard({ post, currentUser, onUpdate }: PostCardProps)
           </Button>
         </div>
       </CardFooter>
+      
+      {/* Comments Modal */}
+      <Comments 
+        postId={post.id}
+        postAuthorId={post.author_id}
+        isOpen={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        initialCommentsCount={post.comments_count}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Post</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this post? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete Post"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

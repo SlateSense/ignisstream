@@ -39,9 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from("profiles")
         .select("*")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== "PGRST116") {
+      if (error) {
         console.error("Error fetching profile:", error);
         return null;
       }
@@ -66,17 +66,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    let mounted = true;
+    
     // Get initial session
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        const profileData = await getProfile(session.user.id);
-        setProfile(profileData);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+        
+        setUser(session?.user ?? null);
+        setLoading(false);
+        
+        // Load profile in background, don't block
+        if (session?.user) {
+          getProfile(session.user.id).then((profileData) => {
+            if (mounted) setProfile(profileData);
+          });
+        }
+      } catch (error) {
+        console.error("Error getting session:", error);
+        if (mounted) setLoading(false);
       }
-      
-      setLoading(false);
     };
 
     getInitialSession();
@@ -84,20 +95,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!mounted) return;
+        
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          const profileData = await getProfile(session.user.id);
-          setProfile(profileData);
+          // Load profile in background
+          getProfile(session.user.id).then((profileData) => {
+            if (mounted) setProfile(profileData);
+          });
         } else {
           setProfile(null);
         }
-        
-        setLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const value = {

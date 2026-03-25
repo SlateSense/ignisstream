@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "IgnisStream",
+    "slug": "ignisstream-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#7c3aed"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ignisstream.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "IgnisStream needs camera access to capture your epic gaming moments",
+        "NSMicrophoneUsageDescription": "IgnisStream needs microphone access to record audio with your videos",
+        "NSPhotoLibraryUsageDescription": "IgnisStream needs photo library access to let you share your existing gaming screenshots and clips"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#7c3aed"
+      },
+      "package": "com.ignisstream.mobile",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow IgnisStream to access your camera to capture epic gaming moments."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share your gaming screenshots and clips."
+        }
+      ]
+    ]
+  }
+}

@@ -67,10 +67,10 @@ const values = [
 ];
 
 const stats = [
-  { label: "Active Users", value: "100K+" },
-  { label: "Posts Shared", value: "1M+" },
-  { label: "Games Supported", value: "500+" },
-  { label: "Countries", value: "50+" }
+  { label: "Active Users", value: "—" },
+  { label: "Posts Shared", value: "—" },
+  { label: "Games Supported", value: "—" },
+  { label: "Countries", value: "—" }
 ];
 
 export default function AboutPage() {

@@ -62,7 +62,16 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getUser()
+  try {
+    await Promise.race([
+      supabase.auth.getUser(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('supabase-timeout')), 1200)
+      ),
+    ])
+  } catch {
+    return response
+  }
 
   return response
 }

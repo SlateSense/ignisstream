@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNotifications } from "@/components/notifications/NotificationProvider";
 import { motion } from "framer-motion";
 import { 
   Bell, 
@@ -22,13 +23,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { mockNotifications, mockUsers } from "@/lib/mock-data";
+// Mock data removed - implementing empty state
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const { notifications, markAsRead, markAllAsRead, deleteNotification, loadNotifications } = useNotifications();
   const [filter, setFilter] = useState("all");
+  
+  // Load notifications when page mounts
+  useEffect(() => {
+    loadNotifications();
+  }, []);
   
   // Notification settings
   const [settings, setSettings] = useState({
@@ -48,21 +54,7 @@ export default function NotificationsPage() {
     return notif.type === filter;
   });
 
-  const markAsRead = (id: number) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === id ? { ...n, read: true } : n)
-    );
-  };
-
-  const markAllAsRead = () => {
-    setNotifications(prev => 
-      prev.map(n => ({ ...n, read: true }))
-    );
-  };
-
-  const deleteNotification = (id: number) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
+  // Functions are provided by NotificationProvider
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -271,10 +263,10 @@ export default function NotificationsPage() {
                                   </Button>
                                 </div>
                               </div>
-                              {notif.post?.thumbnail && (
-                                <Link href={`/post/${notif.post.id}`}>
+                              {(notif.post as any)?.thumbnail && (notif.post as any)?.id && (
+                                <Link href={`/post/${(notif.post as any).id}`}>
                                   <img
-                                    src={notif.post.thumbnail}
+                                    src={(notif.post as any).thumbnail}
                                     alt=""
                                     className="mt-2 rounded-lg w-full max-w-sm h-32 object-cover hover:opacity-90 transition"
                                   />

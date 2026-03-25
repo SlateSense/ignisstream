@@ -3,8 +3,17 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { QueryProvider } from "@/components/providers/QueryProvider";
+import AchievementProvider from "@/components/achievements/AchievementProvider";
+import HashtagProvider from "@/components/hashtags/HashtagProvider";
+import NotificationProvider from "@/components/notifications/NotificationProvider";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ 
+  subsets: ["latin"],
+  display: 'swap', // Optimize font loading
+  preload: true,
+});
 
 export const metadata: Metadata = {
   title: "IgnisStream - Share Your Epic Gaming Moments",
@@ -32,17 +41,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap"
-          rel="stylesheet"
-        />
-      </head>
       <body className={inter.className}>
-        <AuthProvider>
-          {children}
-          <Toaster />
-        </AuthProvider>
+        <QueryProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <NotificationProvider>
+                <HashtagProvider>
+                  <AchievementProvider>
+                    {children}
+                    <Toaster />
+                  </AchievementProvider>
+                </HashtagProvider>
+              </NotificationProvider>
+            </AuthProvider>
+          </ThemeProvider>
+        </QueryProvider>
       </body>
     </html>
   );

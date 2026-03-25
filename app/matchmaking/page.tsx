@@ -35,6 +35,8 @@ import AuthNavbar from "@/components/layout/AuthNavbar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import FilterProvider, { useFilters } from "@/components/filters/FilterProvider";
+import AdvancedFilterPanel from "@/components/filters/AdvancedFilterPanel";
 
 interface MatchmakingPlayer {
   id: string;
@@ -65,26 +67,36 @@ interface MatchmakingSession {
   status: 'searching' | 'found' | 'joining';
 }
 
-export default function MatchmakingPage() {
+function MatchmakingContent() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { filters, applyFilters, getFilterSummary } = useFilters();
   const [activeTab, setActiveTab] = useState("quick-match");
   const [players, setPlayers] = useState<MatchmakingPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<MatchmakingSession | null>(null);
   const [searchProgress, setSearchProgress] = useState(0);
+  const [showFilters, setShowFilters] = useState(false);
   
-  // Filters
+  // Legacy filter states for quick match
   const [selectedGame, setSelectedGame] = useState("valorant");
   const [skillRange, setSkillRange] = useState([1500, 2500]);
   const [locationFilter, setLocationFilter] = useState("any");
   const [rolePreference, setRolePreference] = useState("any");
   const [voiceChatOnly, setVoiceChatOnly] = useState(false);
+  
+  const [filteredPlayers, setFilteredPlayers] = useState<MatchmakingPlayer[]>([]);
 
   useEffect(() => {
     if (!user) return;
     loadPlayers();
   }, [user]);
+  
+  useEffect(() => {
+    // Apply filters to players list
+    const filtered = applyFilters(players);
+    setFilteredPlayers(filtered);
+  }, [players, filters]);
 
   const loadPlayers = async () => {
     try {
@@ -430,7 +442,7 @@ export default function MatchmakingPage() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="grid md:grid-cols-3 gap-4">
+                      <div className="grid md:grid-cols-4 gap-4">
                         <Select>
                           <SelectTrigger>
                             <SelectValue placeholder="Game" />
@@ -440,6 +452,8 @@ export default function MatchmakingPage() {
                             <SelectItem value="valorant">Valorant</SelectItem>
                             <SelectItem value="gta-v">GTA V</SelectItem>
                             <SelectItem value="minecraft">Minecraft</SelectItem>
+                            <SelectItem value="fortnite">Fortnite</SelectItem>
+                            <SelectItem value="apex">Apex Legends</SelectItem>
                           </SelectContent>
                         </Select>
                         <Select>
@@ -448,29 +462,70 @@ export default function MatchmakingPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="any">Any Skill</SelectItem>
-                            <SelectItem value="beginner">Beginner</SelectItem>
-                            <SelectItem value="intermediate">Intermediate</SelectItem>
-                            <SelectItem value="advanced">Advanced</SelectItem>
-                            <SelectItem value="pro">Professional</SelectItem>
+                            <SelectItem value="bronze">Bronze</SelectItem>
+                            <SelectItem value="silver">Silver</SelectItem>
+                            <SelectItem value="gold">Gold</SelectItem>
+                            <SelectItem value="platinum">Platinum</SelectItem>
+                            <SelectItem value="diamond">Diamond</SelectItem>
+                            <SelectItem value="master">Master</SelectItem>
+                            <SelectItem value="legendary">Legendary</SelectItem>
                           </SelectContent>
                         </Select>
                         <Select>
                           <SelectTrigger>
-                            <SelectValue placeholder="Availability" />
+                            <SelectValue placeholder="Region" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All Status</SelectItem>
-                            <SelectItem value="online">Online Now</SelectItem>
-                            <SelectItem value="looking">Looking for Team</SelectItem>
+                            <SelectItem value="all">All Regions</SelectItem>
+                            <SelectItem value="na-west">NA West</SelectItem>
+                            <SelectItem value="na-east">NA East</SelectItem>
+                            <SelectItem value="eu-west">EU West</SelectItem>
+                            <SelectItem value="asia-pacific">Asia Pacific</SelectItem>
                           </SelectContent>
                         </Select>
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowFilters(true)}
+                          className="flex items-center gap-2"
+                        >
+                          <Filter className="h-4 w-4" />
+                          Advanced
+                        </Button>
                       </div>
+                      
+                      {/* Filter Summary */}
+                      {Object.values(filters).some(v => v !== null && (Array.isArray(v) ? v.length > 0 : true)) && (
+                        <div className="mt-4 p-3 bg-secondary/20 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Filter className="h-4 w-4" />
+                              <span>{getFilterSummary()}</span>
+                            </div>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => window.location.reload()}
+                              className="text-xs"
+                            >
+                              Clear All
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
                   {/* Player List */}
                   <div className="space-y-4">
-                    {players.map((player, index) => (
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-sm text-muted-foreground">
+                        Found {filteredPlayers.length} player{filteredPlayers.length !== 1 ? 's' : ''}
+                        {filteredPlayers.length !== players.length && (
+                          <span className="ml-1">({players.length - filteredPlayers.length} filtered out)</span>
+                        )}
+                      </p>
+                    </div>
+                    {filteredPlayers.map((player, index) => (
                       <motion.div
                         key={player.id}
                         initial={{ opacity: 0, y: 20 }}
@@ -554,6 +609,21 @@ export default function MatchmakingPage() {
                         </Card>
                       </motion.div>
                     ))}
+                    
+                    {filteredPlayers.length === 0 && players.length > 0 && (
+                      <Card>
+                        <CardContent className="py-12 text-center">
+                          <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                          <p className="text-lg font-semibold mb-2">No players match your filters</p>
+                          <p className="text-muted-foreground mb-4">
+                            Try adjusting your search criteria or clearing some filters
+                          </p>
+                          <Button variant="outline" onClick={() => setShowFilters(true)}>
+                            Adjust Filters
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    )}
                   </div>
                 </div>
               </TabsContent>
@@ -640,7 +710,22 @@ export default function MatchmakingPage() {
             </Card>
           </div>
         </div>
+        
+        {/* Advanced Filter Panel */}
+        <AdvancedFilterPanel 
+          isOpen={showFilters} 
+          onClose={() => setShowFilters(false)}
+          showQuickFilters={true}
+        />
       </div>
     </div>
+  );
+}
+
+export default function MatchmakingPage() {
+  return (
+    <FilterProvider>
+      <MatchmakingContent />
+    </FilterProvider>
   );
 }

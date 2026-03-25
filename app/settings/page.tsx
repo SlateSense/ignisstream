@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { 
   User, 
@@ -27,19 +27,36 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/use-toast";
-import { mockUsers } from "@/lib/mock-data";
+import { useAuth } from "@/contexts/AuthContext";
+import { createClient } from "@/lib/supabase/client";
 
 export default function SettingsPage() {
   const { toast } = useToast();
-  const currentUser = mockUsers[0];
+  const { user, profile: userProfile, refreshProfile } = useAuth();
+  const supabase = createClient();
   
   const [profile, setProfile] = useState({
-    username: currentUser.username,
-    displayName: currentUser.display_name,
-    bio: currentUser.bio,
-    email: "epicgamer@example.com",
-    avatarUrl: currentUser.avatar_url
+    username: userProfile?.username || "",
+    displayName: userProfile?.display_name || "",
+    bio: userProfile?.bio || "",
+    email: user?.email || "",
+    avatarUrl: userProfile?.avatar_url || ""
   });
+
+  const [loading, setLoading] = useState(false);
+
+  // Update local state when userProfile changes
+  useEffect(() => {
+    if (userProfile && user) {
+      setProfile({
+        username: userProfile.username || "",
+        displayName: userProfile.display_name || "",
+        bio: userProfile.bio || "",
+        email: user.email || "",
+        avatarUrl: userProfile.avatar_url || ""
+      });
+    }
+  }, [userProfile, user]);
 
   const [privacy, setPrivacy] = useState({
     profileVisibility: "public",
@@ -67,18 +84,71 @@ export default function SettingsPage() {
     youtube: { connected: false, username: "" }
   });
 
-  const handleSaveProfile = () => {
-    toast({
-      title: "Profile updated",
-      description: "Your profile has been successfully updated.",
-    });
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          username: profile.username,
+          display_name: profile.displayName,
+          bio: profile.bio,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      await refreshProfile();
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been successfully updated.",
+      });
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update profile. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSavePrivacy = () => {
-    toast({
-      title: "Privacy settings updated",
-      description: "Your privacy preferences have been saved.",
-    });
+  const handleSavePrivacy = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      // For now, we'll store privacy settings in a separate table
+      // This would need to be added to your database schema
+      const { error } = await supabase
+        .from('user_settings')
+        .upsert({
+          user_id: user.id,
+          privacy_settings: privacy,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Privacy settings updated",
+        description: "Your privacy preferences have been saved.",
+      });
+    } catch (error) {
+      console.error('Error updating privacy settings:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update privacy settings. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSaveNotifications = () => {
@@ -169,10 +239,10 @@ export default function SettingsPage() {
               <CardContent className="space-y-6">
                 {/* Avatar */}
                 <div className="flex items-center gap-4">
-                  <Avatar className="h-24 w-24">
+                  <Avatar className="h-12 w-12">
                     <AvatarImage src={profile.avatarUrl} />
                     <AvatarFallback>
-                      {profile.username[0].toUpperCase()}
+                      {profile.username?.[0]?.toUpperCase() || profile.displayName?.[0]?.toUpperCase() || 'U'}
                     </AvatarFallback>
                   </Avatar>
                   <div>
@@ -238,9 +308,9 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
               <CardFooter>
-                <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-gaming-purple to-gaming-pink hover:opacity-90">
+                <Button onClick={handleSaveProfile} disabled={loading} className="bg-gradient-to-r from-gaming-purple to-gaming-pink hover:opacity-90">
                   <Save className="mr-2 h-4 w-4" />
-                  Save Changes
+                  {loading ? 'Saving...' : 'Save Changes'}
                 </Button>
               </CardFooter>
             </Card>
@@ -347,9 +417,9 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
               <CardFooter>
-                <Button onClick={handleSavePrivacy}>
+                <Button onClick={handleSavePrivacy} disabled={loading}>
                   <Save className="mr-2 h-4 w-4" />
-                  Save Privacy Settings
+                  {loading ? 'Saving...' : 'Save Privacy Settings'}
                 </Button>
               </CardFooter>
             </Card>

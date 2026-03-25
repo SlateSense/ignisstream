@@ -1,24 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { 
-  Users, 
   Video, 
   Heart, 
   Settings, 
   Share2,
   Calendar,
-  MapPin,
-  Link as LinkIcon,
-  Twitter,
-  Youtube,
-  Twitch
+  Trophy,
+  Zap,
+  Swords
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import PostCard from "@/components/feed/PostCard";
 import FeedSkeleton from "@/components/feed/FeedSkeleton";
 import { createClient } from "@/lib/supabase/client";
@@ -197,6 +196,12 @@ export default function ProfilePage() {
   }
 
   const isOwnProfile = currentUser?.id === profile.id;
+  const gamerTag = profile.username ? `${profile.username}#${profile.id.slice(0, 4).toUpperCase()}` : "Unknown#0000";
+  const recentBadges = ["MVP", "Clip God", "Team Captain", "Win Streak"];
+  const connectedPlatforms =
+    profile?.gaming_accounts && typeof profile.gaming_accounts === "object"
+      ? Object.keys(profile.gaming_accounts as Record<string, unknown>)
+      : [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -225,6 +230,16 @@ export default function ProfilePage() {
                       {profile.display_name || profile.username}
                     </h1>
                     <p className="text-muted-foreground">@{profile.username}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Badge className="bg-gaming-cyan/20 text-gaming-cyan border border-gaming-cyan/45">
+                        Gamer Tag: {gamerTag}
+                      </Badge>
+                      {profile.premium_status && (
+                        <Badge className="bg-gradient-to-r from-gaming-purple to-gaming-pink text-white">
+                          Premium
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   
                   <div className="flex gap-2">
@@ -273,14 +288,34 @@ export default function ProfilePage() {
                     <span className="font-bold text-xl">{stats.totalLikes}</span>
                     <span className="text-muted-foreground ml-1">likes</span>
                   </div>
+                  <div>
+                    <span className="font-bold text-xl text-gaming-green">{profile.forge_points || 0}</span>
+                    <span className="text-muted-foreground ml-1">forge points</span>
+                  </div>
                 </div>
 
-                {/* Meta Info */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {recentBadges.map((badge) => (
+                    <Badge key={badge} variant="outline" className="border-gaming-purple/40">
+                      <Trophy className="h-3 w-3 mr-1 text-gaming-cyan" />
+                      {badge}
+                    </Badge>
+                  ))}
+                </div>
+
                 <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <Calendar className="h-4 w-4" />
                     Joined {format(new Date(profile.created_at), "MMMM yyyy")}
                   </div>
+                  <div className="flex items-center gap-1">
+                    <Zap className="h-4 w-4 text-gaming-green" />
+                    {connectedPlatforms.length} linked gaming accounts
+                  </div>
+                  <Link href="/teams" className="inline-flex items-center gap-1 hover:text-foreground transition">
+                    <Swords className="h-4 w-4 text-gaming-cyan" />
+                    Join a clan or guild
+                  </Link>
                 </div>
               </div>
             </div>

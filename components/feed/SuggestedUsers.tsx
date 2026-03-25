@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -27,14 +27,11 @@ export default function SuggestedUsers({ currentUser }: SuggestedUsersProps) {
   const [followingStates, setFollowingStates] = useState<{ [key: string]: boolean }>({});
   const { toast } = useToast();
 
-  useEffect(() => {
-    if (currentUser) {
-      loadSuggestedUsers();
+  const loadSuggestedUsers = useCallback(async () => {
+    if (!currentUser) {
+      setLoading(false);
+      return;
     }
-  }, [currentUser]);
-
-  const loadSuggestedUsers = async () => {
-    if (!currentUser) return;
 
     try {
       const supabase = createClient();
@@ -45,11 +42,12 @@ export default function SuggestedUsers({ currentUser }: SuggestedUsersProps) {
         .select("following_id")
         .eq("follower_id", currentUser.id);
 
-      const followingIds = followingData?.map(f => f.following_id) || [];
+      const followingIds = followingData?.map((f: any) => f.following_id) || [];
       followingIds.push(currentUser.id); // Exclude self
+      const exclusionFilter = `(${followingIds.map((id) => `"${id}"`).join(",")})`;
 
       // Get suggested users (users with most followers that we're not following)
-      const { data: usersData, error } = await supabase
+      const primary = await supabase
         .from("profiles")
         .select(`
           id,
@@ -58,10 +56,21 @@ export default function SuggestedUsers({ currentUser }: SuggestedUsersProps) {
           avatar_url,
           follower_count:follows!following_id(count)
         `)
-        .not("id", "in", `(${followingIds.join(',')})`)
+        .not("id", "in", exclusionFilter)
         .limit(5);
 
-      if (error) throw error;
+      let usersData: any[] = primary.data || [];
+
+      if (primary.error) {
+        const fallback = await supabase
+          .from("profiles")
+          .select("id, username, display_name, avatar_url")
+          .not("id", "in", exclusionFilter)
+          .limit(5);
+
+        if (fallback.error) throw fallback.error;
+        usersData = fallback.data || [];
+      }
 
       const processed = usersData?.map((user: any) => ({
         id: user.id,
@@ -89,7 +98,14 @@ export default function SuggestedUsers({ currentUser }: SuggestedUsersProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      loadSuggestedUsers();
+    }
+  }, [currentUser, loadSuggestedUsers]);
+
 
   const handleFollow = async (userId: string, username: string) => {
     if (!currentUser) return;

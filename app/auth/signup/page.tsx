@@ -67,9 +67,17 @@ export default function SignUpPage() {
 
       router.push("/auth/verify-email");
     } catch (error: any) {
+      const rawMessage = String(error?.message || "");
+      const isNetworkOrSupabaseHostIssue =
+        rawMessage.toLowerCase().includes("failed to fetch") ||
+        rawMessage.toLowerCase().includes("fetch failed") ||
+        rawMessage.toLowerCase().includes("enotfound");
+
       toast({
         title: "Sign up failed",
-        description: error.message || "Something went wrong. Please try again.",
+        description: isNetworkOrSupabaseHostIssue
+          ? "Cannot reach auth server right now. Check your Supabase URL/keys in .env.local and your internet connection."
+          : error.message || "Something went wrong. Please try again.",
         variant: "destructive"
       });
     } finally {
