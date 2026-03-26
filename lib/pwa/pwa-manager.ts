@@ -40,6 +40,8 @@ export class PWAManager {
     this.initializeDB();
     this.setupEventListeners();
   }
+  
+  private setupEventListeners() {}
 
   // Initialize PWA Manager
   async initialize() {
@@ -56,6 +58,11 @@ export class PWAManager {
   // Service Worker Setup
   private async setupServiceWorker() {
     if ('serviceWorker' in navigator) {
+      if (process.env.NODE_ENV !== 'production') {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        regs.forEach((r) => r.unregister());
+        return;
+      }
       try {
         const registration = await navigator.serviceWorker.register('/sw.js', {
           scope: '/'
@@ -167,7 +174,7 @@ export class PWAManager {
         userVisibleOnly: true,
         applicationServerKey: this.urlBase64ToUint8Array(
           process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ''
-        ),
+        ) as unknown as BufferSource,
       });
 
       // Send subscription to server
@@ -199,22 +206,14 @@ export class PWAManager {
       badge: '/icons/badge.png',
       tag: 'achievement',
       requireInteraction: true,
-      vibrate: [200, 100, 200, 100, 200],
-      actions: [
-        {
-          action: 'share',
-          title: 'Share Achievement',
-          icon: '/icons/share.png'
-        },
-        {
-          action: 'view',
-          title: 'View Profile',
-          icon: '/icons/profile.png'
-        }
-      ],
       data: {
         type: 'achievement',
         achievement,
+        vibrate: [200, 100, 200, 100, 200],
+        actions: [
+          { action: 'share', title: 'Share Achievement', icon: '/icons/share.png' },
+          { action: 'view', title: 'View Profile', icon: '/icons/profile.png' },
+        ],
         url: '/profile/achievements'
       }
     });
@@ -239,21 +238,13 @@ export class PWAManager {
       icon: friend.avatar || '/icons/friend.png',
       badge: '/icons/badge.png',
       tag: 'friend-online',
-      actions: [
-        {
-          action: 'message',
-          title: 'Send Message',
-          icon: '/icons/message.png'
-        },
-        {
-          action: 'invite',
-          title: 'Invite to Game',
-          icon: '/icons/game.png'
-        }
-      ],
       data: {
         type: 'friend_online',
         friend,
+        actions: [
+          { action: 'message', title: 'Send Message', icon: '/icons/message.png' },
+          { action: 'invite', title: 'Invite to Game', icon: '/icons/game.png' },
+        ],
         url: `/profile/${friend.name}`
       }
     });
@@ -282,9 +273,12 @@ export class PWAManager {
     });
 
     // Register background sync if available
-    if ('serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype) {
+    if ('serviceWorker' in navigator) {
       const registration = await navigator.serviceWorker.ready;
-      await registration.sync.register('background-sync');
+      const regAny: any = registration;
+      if (regAny.sync && regAny.sync.register) {
+        await regAny.sync.register('background-sync');
+      }
     }
   }
 
@@ -400,7 +394,7 @@ export class PWAManager {
 
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { mediaSource: 'screen' }
+        video: true
       });
 
       const video = document.createElement('video');

@@ -53,9 +53,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const ensureProfile = async (currentUser: User) => {
+    const existingProfile = await getProfile(currentUser.id);
+
+    if (existingProfile) {
+      return existingProfile;
+    }
+
+    const usernameFromMetadata =
+      currentUser.user_metadata?.preferred_username ||
+      currentUser.user_metadata?.user_name ||
+      currentUser.user_metadata?.name?.toLowerCase()?.replace(/\s+/g, "") ||
+      `player_${currentUser.id.slice(0, 8)}`;
+
+    const displayNameFromMetadata =
+      currentUser.user_metadata?.full_name ||
+      currentUser.user_metadata?.name ||
+      usernameFromMetadata;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .upsert(
+        {
+          id: currentUser.id,
+          username: usernameFromMetadata,
+          display_name: displayNameFromMetadata,
+          avatar_url:
+            currentUser.user_metadata?.avatar_url ||
+            currentUser.user_metadata?.picture ||
+            null,
+          bio: null,
+          forge_points: 0,
+          premium_status: false,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "id",
+          ignoreDuplicates: false,
+        }
+      )
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("Error creating profile:", error);
+      return null;
+    }
+
+    return data;
+  };
+
   const refreshProfile = async () => {
     if (!user) return;
-    const profileData = await getProfile(user.id);
+    const profileData = await ensureProfile(user);
     setProfile(profileData);
   };
 
@@ -76,16 +126,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return;
         
         setUser(session?.user ?? null);
-        setLoading(false);
         
-        // Load profile in background, don't block
         if (session?.user) {
-          getProfile(session.user.id).then((profileData) => {
-            if (mounted) setProfile(profileData);
-          });
+          const profileData = await ensureProfile(session.user);
+          if (mounted) setProfile(profileData);
+        } else if (mounted) {
+          setProfile(null);
         }
       } catch (error) {
         console.error("Error getting session:", error);
+      } finally {
         if (mounted) setLoading(false);
       }
     };
@@ -100,13 +150,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Load profile in background
-          getProfile(session.user.id).then((profileData) => {
-            if (mounted) setProfile(profileData);
-          });
+          const profileData = await ensureProfile(session.user);
+          if (mounted) {
+            setProfile(profileData);
+          }
         } else {
           setProfile(null);
         }
+
+        setLoading(false);
       }
     );
 

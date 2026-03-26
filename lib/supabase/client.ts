@@ -1,7 +1,45 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { Database } from '@/types/database'
+import { getRememberMePreference } from '@/lib/auth/session'
 
 let clientInstance: ReturnType<typeof createBrowserClient<Database>> | null = null;
+
+const getPrimaryStorage = () => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  return getRememberMePreference() ? window.localStorage : window.sessionStorage
+}
+
+const authStorage = {
+  getItem(key: string) {
+    if (typeof window === 'undefined') {
+      return null
+    }
+
+    return window.localStorage.getItem(key) ?? window.sessionStorage.getItem(key)
+  },
+  setItem(key: string, value: string) {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const primaryStorage = getPrimaryStorage()
+    const secondaryStorage = primaryStorage === window.localStorage ? window.sessionStorage : window.localStorage
+
+    primaryStorage?.setItem(key, value)
+    secondaryStorage.removeItem(key)
+  },
+  removeItem(key: string) {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.localStorage.removeItem(key)
+    window.sessionStorage.removeItem(key)
+  },
+ }
 
 export function createClient() {
   // Return cached instance if available
@@ -21,6 +59,12 @@ export function createClient() {
     );
   }
   
-  clientInstance = createBrowserClient<Database>(url, key);
+  clientInstance = createBrowserClient<Database>(url, key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      storage: authStorage,
+    },
+  });
   return clientInstance;
 }

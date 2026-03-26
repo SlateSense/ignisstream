@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getRememberedAuthenticatedRoute } from "@/lib/auth/session";
 import { Loader2, Gamepad2 } from "lucide-react";
 
 export default function AuthCallback() {
@@ -53,7 +54,7 @@ export default function AuthCallback() {
           }
 
           // Redirect to feed
-          router.push('/feed');
+          router.push(getRememberedAuthenticatedRoute());
         } else {
           router.push('/auth/signin');
         }

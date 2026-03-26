@@ -3,11 +3,15 @@
  * Advanced PWA functionality with gaming-optimized features
  */
 
-const CACHE_NAME = 'ignisstream-v1';
-const STATIC_CACHE = 'ignisstream-static-v1';
-const DYNAMIC_CACHE = 'ignisstream-dynamic-v1';
-const IMAGE_CACHE = 'ignisstream-images-v1';
-const API_CACHE = 'ignisstream-api-v1';
+const CACHE_NAME = 'ignisstream-v2';
+const STATIC_CACHE = 'ignisstream-static-v2';
+const DYNAMIC_CACHE = 'ignisstream-dynamic-v2';
+const IMAGE_CACHE = 'ignisstream-images-v2';
+const API_CACHE = 'ignisstream-api-v2';
+const DISABLE_SERVICE_WORKER =
+  self.location.hostname === 'localhost' ||
+  self.location.hostname === '127.0.0.1' ||
+  self.location.hostname === '0.0.0.0';
 
 // Cache strategies
 const CACHE_STRATEGIES = {
@@ -23,8 +27,6 @@ const STATIC_ASSETS = [
   '/',
   '/manifest.json',
   '/offline',
-  '/_next/static/css/',
-  '/_next/static/js/',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
 ];
@@ -49,6 +51,11 @@ const API_CACHE_CONFIG = {
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
   console.log('IgnisStream SW: Installing...');
+
+  if (DISABLE_SERVICE_WORKER) {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
   
   event.waitUntil(
     Promise.all([
@@ -63,7 +70,9 @@ self.addEventListener('install', (event) => {
       }),
       
       // Initialize background sync
-      self.registration.sync.register('background-sync'),
+      typeof self.registration.sync?.register === 'function'
+        ? self.registration.sync.register('background-sync').catch(() => undefined)
+        : Promise.resolve(),
     ])
   );
   
@@ -74,6 +83,15 @@ self.addEventListener('install', (event) => {
 // Activate event - cleanup old caches
 self.addEventListener('activate', (event) => {
   console.log('IgnisStream SW: Activating...');
+
+  if (DISABLE_SERVICE_WORKER) {
+    event.waitUntil(
+      caches.keys().then((cacheNames) =>
+        Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)))
+      ).then(() => self.registration.unregister())
+    );
+    return;
+  }
   
   event.waitUntil(
     Promise.all([
@@ -99,6 +117,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  if (DISABLE_SERVICE_WORKER || isNextBuildAsset(url)) {
+    return;
+  }
   
   // Skip non-GET requests and external URLs
   if (request.method !== 'GET' || !url.origin.includes(self.location.origin)) {
@@ -188,6 +210,11 @@ async function handleImageRequest(request) {
 
 // Static asset handler
 async function handleStaticRequest(request) {
+  const url = new URL(request.url);
+  if (isNextBuildAsset(url)) {
+    return fetch(request);
+  }
+
   const cache = await caches.open(STATIC_CACHE);
   return cacheFirst(request, cache, 86400000); // 24 hours
 }
@@ -535,6 +562,10 @@ function isStaticAsset(request) {
   const url = new URL(request.url);
   return /\.(css|js|woff|woff2|ttf|eot|ico)$/i.test(url.pathname) ||
          url.pathname.startsWith('/_next/static/');
+}
+
+function isNextBuildAsset(url) {
+  return url.pathname.startsWith('/_next/static/');
 }
 
 function isExpired(response, ttl) {

@@ -136,6 +136,12 @@ export class NotificationManager {
       throw new Error('Service Worker not supported');
     }
 
+    if (process.env.NODE_ENV !== 'production') {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      regs.forEach((r) => r.unregister());
+      throw new Error('Service Worker disabled in development');
+    }
+
     const registration = await navigator.serviceWorker.register('/sw.js');
     await navigator.serviceWorker.ready;
     return registration;
@@ -155,7 +161,7 @@ export class NotificationManager {
       // Create new subscription
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: this.urlBase64ToUint8Array(this.vapidKeys.publicKey),
+        applicationServerKey: this.urlBase64ToUint8Array(this.vapidKeys.publicKey) as unknown as BufferSource,
       });
     }
 
@@ -477,17 +483,9 @@ export class NotificationManager {
     await registration.showNotification(payload.title, {
       body: payload.body,
       icon: payload.icon,
-      image: payload.image,
       badge: payload.badge,
-      vibrate: payload.vibrate,
-      actions: payload.actions?.map(action => ({
-        action: action.action,
-        title: action.title,
-        icon: action.icon,
-      })),
-      data: payload.data,
+      data: { ...(payload.data || {}), image: payload.image, vibrate: payload.vibrate, actions: payload.actions },
       tag: payload.tag,
-      renotify: payload.renotify,
       requireInteraction: payload.requireInteraction,
       silent: payload.silent,
     });

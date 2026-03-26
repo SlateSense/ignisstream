@@ -7,9 +7,11 @@ import { motion } from "framer-motion";
 import { Gamepad2, Mail, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
+import { getRememberedAuthenticatedRoute, setRememberMePreference } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/client";
 
 export default function SignInPage() {
@@ -17,6 +19,7 @@ export default function SignInPage() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [formData, setFormData] = useState({
     email: "",
     password: ""
@@ -27,6 +30,7 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
+      setRememberMePreference(rememberMe);
       const supabase = createClient();
       
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -41,7 +45,7 @@ export default function SignInPage() {
         description: "You've successfully signed in.",
       });
 
-      router.push("/feed");
+      router.push(getRememberedAuthenticatedRoute());
       router.refresh();
     } catch (error: any) {
       toast({
@@ -153,6 +157,22 @@ export default function SignInPage() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+                <div>
+                  <Label htmlFor="remember-me" className="text-sm font-medium">
+                    Remember me
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Keep your session across future visits on this device
+                  </p>
+                </div>
+                <Checkbox
+                  id="remember-me"
+                  checked={rememberMe}
+                  onCheckedChange={(checked) => setRememberMe(Boolean(checked))}
+                />
               </div>
 
               <Button

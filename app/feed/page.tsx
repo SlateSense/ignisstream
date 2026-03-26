@@ -67,9 +67,9 @@ interface Post {
 export default function FeedPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("trending");
@@ -148,7 +148,7 @@ export default function FeedPage() {
   const loadPosts = useCallback(async (feedType: string = "trending", page: number = 0) => {
     const requestId = ++requestIdRef.current;
     if (page === 0) {
-      setLoading(true);
+      setIsLoading(true);
     }
 
     try {
@@ -182,6 +182,11 @@ export default function FeedPage() {
         setHasMore(feedType === "following" ? hasMoreFromApi : hasMoreFromApi);
         if (page === 0) {
           setPosts(normalizedRows);
+          try {
+            const cacheKey = `feed_cache_${feedType}`;
+            const payload = { ts: Date.now(), posts: normalizedRows };
+            localStorage.setItem(cacheKey, JSON.stringify(payload));
+          } catch {}
         } else {
           setPosts((prev) => [...prev, ...normalizedRows]);
         }
@@ -321,21 +326,32 @@ export default function FeedPage() {
       return true;
     } finally {
       if (page === 0 && requestId === requestIdRef.current) {
-        setLoading(false);
+        setIsLoading(false);
       }
     }
   }, [toast, user]);
 
   useEffect(() => {
+    if (loading) return;
     if (!user) {
       router.push('/auth/signin');
       return;
     }
-
+    try {
+      const cacheKey = `feed_cache_${activeTab}`;
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const payload = JSON.parse(raw);
+        if (Array.isArray(payload?.posts)) {
+          setPosts(payload.posts);
+          setIsLoading(false);
+        }
+      }
+    } catch {}
     setCurrentPage(0);
     setHasMore(true);
     loadPosts(activeTab, 0);
-  }, [user, router, activeTab, loadPosts]);
+  }, [user, loading, router, activeTab, loadPosts]);
 
   const loadMorePosts = useCallback(async () => {
     if (loadingMore || !hasMore) return;
@@ -354,10 +370,10 @@ export default function FeedPage() {
   }, [activeTab, currentPage, hasMore, loadPosts, loadingMore]);
 
   useEffect(() => {
-    if (inView && hasMore && !loading && !loadingMore) {
+    if (inView && hasMore && !isLoading && !loadingMore) {
       loadMorePosts();
     }
-  }, [inView, hasMore, loading, loadingMore, loadMorePosts]);
+  }, [inView, hasMore, isLoading, loadingMore, loadMorePosts]);
 
   const handlePostCreated = (newPost: any) => {
     // Add the new post to the beginning of the feed
@@ -418,7 +434,7 @@ export default function FeedPage() {
               </TabsList>
 
               <div className="mt-6 space-y-6">
-                {loading ? (
+                {isLoading ? (
                   <FeedSkeleton />
                 ) : posts.length > 0 ? (
                   posts.map((post: Post) => (

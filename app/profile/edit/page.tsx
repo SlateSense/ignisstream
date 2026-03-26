@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGameSearch } from "@/lib/hooks/useGameSearch";
 import { createClient } from "@/lib/supabase/client";
 
 interface GamingPreferences {
@@ -87,13 +88,20 @@ export default function EditProfilePage() {
     showSocialLinks: true,
     showGamingStats: true
   });
-
-  // Popular games and genres for selection
-  const popularGames = [
-    "Valorant", "League of Legends", "CS2", "Apex Legends", "Fortnite", 
-    "Overwatch 2", "Call of Duty", "Rocket League", "Minecraft", "GTA V",
-    "Among Us", "Fall Guys", "Destiny 2", "FIFA 24", "NBA 2K24"
-  ];
+  const [favoriteGameFilters, setFavoriteGameFilters] = useState({
+    genre: "all",
+    platform: "all",
+    releaseWindow: "all"
+  });
+  const {
+    query: favoriteGameQuery,
+    setQuery: setFavoriteGameQuery,
+    games: favoriteGameResults,
+    loading: loadingFavoriteGames
+  } = useGameSearch({
+    limit: 20,
+    filters: favoriteGameFilters,
+  });
 
   const genres = [
     "FPS", "MOBA", "Battle Royale", "RPG", "MMO", "Strategy", "Racing",
@@ -461,18 +469,75 @@ export default function EditProfilePage() {
                     </Badge>
                   ))}
                 </div>
-                <Select onValueChange={addFavoriteGame}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Add a favorite game..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {popularGames
-                      .filter(game => !gamingPrefs.favoriteGames.includes(game))
+                <Input
+                  placeholder="Search games to add..."
+                  value={favoriteGameQuery}
+                  onChange={(event) => setFavoriteGameQuery(event.target.value)}
+                />
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                  <Select value={favoriteGameFilters.genre} onValueChange={(value) => setFavoriteGameFilters((prev) => ({ ...prev, genre: value }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Genre" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Genres</SelectItem>
+                      <SelectItem value="shooter">Shooter</SelectItem>
+                      <SelectItem value="mmo">MMO</SelectItem>
+                      <SelectItem value="strategy">Strategy</SelectItem>
+                      <SelectItem value="battle royale">Battle Royale</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={favoriteGameFilters.platform} onValueChange={(value) => setFavoriteGameFilters((prev) => ({ ...prev, platform: value }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Platform" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Platforms</SelectItem>
+                      <SelectItem value="pc">PC</SelectItem>
+                      <SelectItem value="playstation">PlayStation</SelectItem>
+                      <SelectItem value="xbox">Xbox</SelectItem>
+                      <SelectItem value="mobile">Mobile</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={favoriteGameFilters.releaseWindow} onValueChange={(value) => setFavoriteGameFilters((prev) => ({ ...prev, releaseWindow: value }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Release" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any Release</SelectItem>
+                      <SelectItem value="recent">Recent</SelectItem>
+                      <SelectItem value="upcoming">Upcoming</SelectItem>
+                      <SelectItem value="classic">Classic</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 rounded-lg border border-dashed p-3">
+                  {loadingFavoriteGames ? (
+                    <p className="text-sm text-muted-foreground">Searching games...</p>
+                  ) : favoriteGameResults.length > 0 ? (
+                    favoriteGameResults
+                      .filter((game) => !gamingPrefs.favoriteGames.includes(game.name))
+                      .slice(0, 8)
                       .map((game) => (
-                        <SelectItem key={game} value={game}>{game}</SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                        <button
+                          key={`${game.source}-${game.id}`}
+                          type="button"
+                          onClick={() => addFavoriteGame(game.name)}
+                          className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{game.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {[game.genre, game.platforms?.join(", "), game.release_date?.slice(0, 4)].filter(Boolean).join(" • ") || "No metadata available"}
+                            </p>
+                          </div>
+                          <span className="text-xs text-primary">Add</span>
+                        </button>
+                      ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No matching games available right now.</p>
+                  )}
+                </div>
               </div>
 
               {/* Favorite Genres */}

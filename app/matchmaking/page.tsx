@@ -6,7 +6,6 @@ import {
   Users, 
   Gamepad2, 
   Search,
-  Settings,
   MapPin,
   Clock,
   Star,
@@ -16,7 +15,6 @@ import {
   MessageCircle,
   UserPlus,
   Filter,
-  RefreshCw,
   Target,
   Trophy
 } from "lucide-react";
@@ -31,9 +29,11 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import AuthNavbar from "@/components/layout/AuthNavbar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
+import { useGameSearch } from "@/lib/hooks/useGameSearch";
 import { cn } from "@/lib/utils";
 import FilterProvider, { useFilters } from "@/components/filters/FilterProvider";
 import AdvancedFilterPanel from "@/components/filters/AdvancedFilterPanel";
@@ -68,7 +68,7 @@ interface MatchmakingSession {
 }
 
 function MatchmakingContent() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const { filters, applyFilters, getFilterSummary } = useFilters();
   const [activeTab, setActiveTab] = useState("quick-match");
@@ -79,13 +79,24 @@ function MatchmakingContent() {
   const [showFilters, setShowFilters] = useState(false);
   
   // Legacy filter states for quick match
-  const [selectedGame, setSelectedGame] = useState("valorant");
+  const [selectedGame, setSelectedGame] = useState("");
   const [skillRange, setSkillRange] = useState([1500, 2500]);
   const [locationFilter, setLocationFilter] = useState("any");
-  const [rolePreference, setRolePreference] = useState("any");
   const [voiceChatOnly, setVoiceChatOnly] = useState(false);
   
   const [filteredPlayers, setFilteredPlayers] = useState<MatchmakingPlayer[]>([]);
+  const [quickStats, setQuickStats] = useState<{ online?: number; avgWait?: string; quality?: string; gamesToday?: number }>({});
+  const [userStats, setUserStats] = useState<{ matchesToday: string; winRate: string; teamRating: string; forgePoints: string }>({
+    matchesToday: "No data available",
+    winRate: "No data available",
+    teamRating: "No data available",
+    forgePoints: "No data available"
+  });
+  const { query: gameSearchQuery, setQuery: setGameSearchQuery, games: gameOptions, loading: loadingGames } = useGameSearch({
+    limit: 12,
+    filters: {}
+  });
+  const selectedGameOption = gameOptions.find((game) => String(game.id) === selectedGame);
 
   useEffect(() => {
     if (!user) return;
@@ -98,6 +109,65 @@ function MatchmakingContent() {
     setFilteredPlayers(filtered);
   }, [players, filters]);
 
+  useEffect(() => {
+    const supabase = createClient();
+    Promise.all([
+      supabase.from("profiles").select("*", { count: "exact", head: true }).eq("is_online", true),
+      supabase.from("match_history").select("id", { count: "exact", head: true }).gte("date_played", new Date(Date.now() - 24*60*60*1000).toISOString()),
+    ]).then(([onlineRes, matchesRes]) => {
+      setQuickStats({
+        online: onlineRes.count ?? undefined,
+        avgWait: undefined,
+        quality: undefined,
+        gamesToday: matchesRes.count ?? undefined,
+      });
+    }).catch(() => {
+      setQuickStats({});
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const supabase = createClient();
+    Promise.all([
+      supabase.from("match_history").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("date_played", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
+      supabase.from("match_history").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("result", "win"),
+      supabase.from("profiles").select("forge_points").eq("id", user.id).maybeSingle()
+    ]).then(([matchesToday, wins, profileRow]) => {
+      const totalMatches = matchesToday.count || 0;
+      const winCount = wins.count || 0;
+      setUserStats({
+        matchesToday: totalMatches > 0 ? String(totalMatches) : "No data available",
+        winRate: totalMatches > 0 ? `${Math.round((winCount / totalMatches) * 100)}%` : "No data available",
+        teamRating: filteredPlayers.length > 0
+          ? `${Math.round(filteredPlayers.reduce((sum, player) => sum + player.compatibility_score, 0) / filteredPlayers.length)}% fit`
+          : "No data available",
+        forgePoints: typeof profileRow.data?.forge_points === "number" ? `${profileRow.data.forge_points} FP` : "No data available",
+      });
+    }).catch(() => {
+      setUserStats({
+        matchesToday: "No data available",
+        winRate: "No data available",
+        teamRating: "No data available",
+        forgePoints: "No data available"
+      });
+    });
+  }, [filteredPlayers, user]);
+
+  const calculateCompatibilityScore = (player: any) => {
+    const currentUserPoints = profile?.forge_points || 0;
+    const candidatePoints = player.forge_points || 0;
+    if (!currentUserPoints && !candidatePoints) {
+      return 0;
+    }
+
+    const maxPoints = Math.max(currentUserPoints, candidatePoints, 1);
+    const difference = Math.abs(currentUserPoints - candidatePoints);
+    return Math.max(0, Math.round(100 - (difference / maxPoints) * 100));
+  };
   const loadPlayers = async () => {
     try {
       const supabase = createClient();
@@ -119,14 +189,14 @@ function MatchmakingContent() {
         avatar_url: player.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.id}`,
         skill_rating: player.forge_points || 1000, // Use forge points as skill rating
         rank: getRankFromPoints(player.forge_points || 1000),
-        location: "Online", // Default location
-        game: "Multi-Game", // Default game
-        playstyle: ["Team Player", "Competitive"],
+        location: player.location || "Region not shared",
+        game: player.favorite_game || player.favorite_games?.[0] || "No preferred game",
+        playstyle: [player.play_style || player.competitive_level || "Flexible"].filter(Boolean),
         availability: "online" as const,
-        languages: ["English"],
-        preferred_roles: ["Flexible"],
-        recent_achievements: [`${player.forge_points || 0} Forge Points`],
-        compatibility_score: Math.floor(Math.random() * 30) + 70 // Random compatibility
+        languages: player.languages || [],
+        preferred_roles: player.preferred_roles || [],
+        recent_achievements: player.forge_points ? [`${player.forge_points} Forge Points`] : [],
+        compatibility_score: calculateCompatibilityScore(player)
       })) || [];
 
       setPlayers(processedPlayers);
@@ -245,28 +315,28 @@ function MatchmakingContent() {
             <Card>
               <CardContent className="p-4 text-center">
                 <Users className="h-8 w-8 mx-auto mb-2 text-primary" />
-                <p className="text-2xl font-bold">2,847</p>
+                <p className="text-2xl font-bold">{quickStats.online ?? "—"}</p>
                 <p className="text-sm text-muted-foreground">Players Online</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
                 <Clock className="h-8 w-8 mx-auto mb-2 text-green-500" />
-                <p className="text-2xl font-bold">1:23</p>
+                <p className="text-2xl font-bold">{quickStats.avgWait ?? "No data"}</p>
                 <p className="text-sm text-muted-foreground">Avg Match Time</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
                 <Target className="h-8 w-8 mx-auto mb-2 text-blue-500" />
-                <p className="text-2xl font-bold">96%</p>
+                <p className="text-2xl font-bold">{quickStats.quality ?? "No data"}</p>
                 <p className="text-sm text-muted-foreground">Match Quality</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
                 <Trophy className="h-8 w-8 mx-auto mb-2 text-yellow-500" />
-                <p className="text-2xl font-bold">573</p>
+                <p className="text-2xl font-bold">{quickStats.gamesToday ?? "—"}</p>
                 <p className="text-sm text-muted-foreground">Games Today</p>
               </CardContent>
             </Card>
@@ -319,12 +389,54 @@ function MatchmakingContent() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="valorant">Valorant</SelectItem>
-                                  <SelectItem value="gta-v">GTA V</SelectItem>
-                                  <SelectItem value="minecraft">Minecraft</SelectItem>
-                                  <SelectItem value="fortnite">Fortnite</SelectItem>
+                                  {gameOptions.length > 0 ? (
+                                    gameOptions.map((game) => (
+                                      <SelectItem key={game.id} value={String(game.id)}>
+                                        {game.name}
+                                      </SelectItem>
+                                    ))
+                                  ) : (
+                                    <SelectItem value="no-games" disabled>No games available</SelectItem>
+                                  )}
                                 </SelectContent>
                               </Select>
+                              <div className="mt-2 space-y-2">
+                                <Input
+                                  placeholder="Search for a game..."
+                                  value={gameSearchQuery}
+                                  onChange={(event) => setGameSearchQuery(event.target.value)}
+                                />
+                                <div className="rounded-lg border p-2">
+                                  {loadingGames ? (
+                                    <p className="text-xs text-muted-foreground">Searching game catalog...</p>
+                                  ) : (
+                                    gameOptions
+                                      .filter((game) => game.name.toLowerCase().includes(gameSearchQuery.toLowerCase()))
+                                      .slice(0, 4)
+                                      .map((game) => (
+                                        <button
+                                          key={`${game.source}-${game.id}`}
+                                          type="button"
+                                          onClick={() => setSelectedGame(String(game.id))}
+                                          className={cn(
+                                            "flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm transition-colors",
+                                            selectedGame === String(game.id) ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
+                                          )}
+                                        >
+                                          <span>{game.name}</span>
+                                          <span className="text-xs text-muted-foreground">
+                                            {game.platforms?.[0] || game.genre || game.source}
+                                          </span>
+                                        </button>
+                                      ))
+                                  )}
+                                </div>
+                                {selectedGameOption && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Selected: {selectedGameOption.name}
+                                  </p>
+                                )}
+                              </div>
                             </div>
                             <div>
                               <Label>Region</Label>
@@ -651,19 +763,19 @@ function MatchmakingContent() {
               <CardContent className="space-y-4">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Matches Today</span>
-                  <span className="font-semibold">7</span>
+                  <span className="font-semibold">{userStats.matchesToday}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Win Rate</span>
-                  <span className="font-semibold text-green-500">68%</span>
+                  <span className="font-semibold text-green-500">{userStats.winRate}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Avg Team Rating</span>
-                  <span className="font-semibold">★ 4.7</span>
+                  <span className="font-semibold">{userStats.teamRating}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Forge Points</span>
-                  <span className="font-semibold text-yellow-600">2,847 FP</span>
+                  <span className="font-semibold text-yellow-600">{userStats.forgePoints}</span>
                 </div>
               </CardContent>
             </Card>

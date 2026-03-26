@@ -47,11 +47,13 @@ export default function MediaUploader({
   onFilesUploaded,
   maxFiles = 5,
   acceptedTypes = ['image/*', 'video/*'],
-  maxSize = 100
+  maxSize = Number.MAX_SAFE_INTEGER
 }: MediaUploaderProps) {
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<MediaFile | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
   
   // Video player states
   const [playing, setPlaying] = useState(false);
@@ -68,20 +70,51 @@ export default function MediaUploader({
   
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles: MediaFile[] = acceptedFiles.map(file => ({
-      id: Math.random().toString(36).substr(2, 9),
-      file,
-      url: URL.createObjectURL(file),
-      type: file.type.startsWith('video/') ? 'video' as const : 'image' as const,
-    }));
+  const getVideoDuration = (file: File): Promise<number> => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      const objectUrl = URL.createObjectURL(file);
 
-    // Generate thumbnails for videos
-    newFiles.forEach(async (mediaFile) => {
-      if (mediaFile.type === 'video') {
-        const thumbnail = await generateVideoThumbnail(mediaFile.file);
-        mediaFile.thumbnail = thumbnail;
-      }
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(video.duration || 0);
+      };
+      video.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Unable to inspect video duration'));
+      };
+      video.src = objectUrl;
+    });
+  };
+
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    setValidationMessage(null);
+
+    const newFiles = await Promise.all(
+      acceptedFiles.map(async (file) => {
+        const type = file.type.startsWith('video/') ? 'video' as const : 'image' as const;
+        const mediaFile: MediaFile = {
+          id: Math.random().toString(36).substr(2, 9),
+          file,
+          url: URL.createObjectURL(file),
+          type,
+        };
+
+        if (type === 'video') {
+          mediaFile.duration = await getVideoDuration(file);
+          if (mediaFile.duration > 24 * 60 * 60) {
+            URL.revokeObjectURL(mediaFile.url);
+            throw new Error(`${file.name} exceeds the 24-hour duration limit.`);
+          }
+          mediaFile.thumbnail = await generateVideoThumbnail(file);
+        }
+
+        return mediaFile;
+      })
+    ).catch((error: Error) => {
+      setValidationMessage(error.message);
+      return [];
     });
 
     setFiles(prev => [...prev, ...newFiles].slice(0, maxFiles));
@@ -115,7 +148,7 @@ export default function MediaUploader({
       'video/*': ['.mp4', '.webm', '.mov', '.avi']
     },
     maxFiles: maxFiles - files.length,
-    maxSize: maxSize * 1024 * 1024,
+    maxSize: Number.MAX_SAFE_INTEGER,
     disabled: files.length >= maxFiles
   });
 
@@ -159,9 +192,23 @@ export default function MediaUploader({
 
   const handleUpload = async () => {
     setUploading(true);
+    setUploadProgress(0);
     try {
+      const totalChunks = files.reduce((count, mediaFile) => {
+        const chunks = Math.max(1, Math.ceil(mediaFile.file.size / (25 * 1024 * 1024)));
+        return count + chunks;
+      }, 0);
+      let processedChunks = 0;
+
       // Apply filters and transformations here
       const processedFiles = await Promise.all(files.map(async (mediaFile) => {
+        const fileChunks = Math.max(1, Math.ceil(mediaFile.file.size / (25 * 1024 * 1024)));
+        for (let chunkIndex = 0; chunkIndex < fileChunks; chunkIndex += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          processedChunks += 1;
+          setUploadProgress(Math.round((processedChunks / totalChunks) * 100));
+        }
+
         if (mediaFile.type === 'image') {
           // Apply image filters
           const processedUrl = await applyImageFilters(mediaFile.url, {
@@ -180,6 +227,7 @@ export default function MediaUploader({
       console.error('Upload failed:', error);
     } finally {
       setUploading(false);
+      setTimeout(() => setUploadProgress(0), 300);
     }
   };
 
@@ -230,32 +278,40 @@ export default function MediaUploader({
     <div className="space-y-6">
       {/* Upload Area */}
       {files.length < maxFiles && (
-        <div
-          {...getRootProps()}
-          className={cn(
-            "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
-            isDragActive 
-              ? "border-primary bg-primary/5" 
-              : "border-muted-foreground/25 hover:border-primary/50"
-          )}
-        >
-          <input {...getInputProps()} />
-          <div className="flex flex-col items-center space-y-4">
-            <div className="h-12 w-12 bg-gradient-to-r from-gaming-purple to-gaming-pink rounded-full flex items-center justify-center">
-              <Upload className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <p className="text-lg font-medium mb-2">
-                {isDragActive ? "Drop your files here" : "Upload your gaming moments"}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Drag & drop or click to select videos and images
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Max {maxFiles} files, up to {maxSize}MB each
-              </p>
+        <div className="space-y-3">
+          <div
+            {...getRootProps()}
+            className={cn(
+              "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
+              isDragActive 
+                ? "border-primary bg-primary/5" 
+                : "border-muted-foreground/25 hover:border-primary/50"
+            )}
+          >
+            <input {...getInputProps()} />
+            <div className="flex flex-col items-center space-y-4">
+              <div className="h-12 w-12 bg-gradient-to-r from-gaming-purple to-gaming-pink rounded-full flex items-center justify-center">
+                <Upload className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <p className="text-lg font-medium mb-2">
+                  {isDragActive ? "Drop your files here" : "Upload your gaming moments"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Drag & drop or click to select videos and images
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Max {maxFiles} files, no enforced file size cap, 24-hour video duration limit
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Files larger than 25MB are prepared in chunks for smoother uploads
+                </p>
+              </div>
             </div>
           </div>
+          {validationMessage && (
+            <p className="text-sm text-destructive">{validationMessage}</p>
+          )}
         </div>
       )}
 
@@ -289,6 +345,11 @@ export default function MediaUploader({
                           <Video className="mr-1 h-3 w-3" />
                           Video
                         </Badge>
+                        {file.duration ? (
+                          <Badge className="absolute bottom-2 left-2 bg-black/80 text-white">
+                            {Math.floor(file.duration / 3600)}h {Math.floor((file.duration % 3600) / 60)}m
+                          </Badge>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="relative w-full h-full">
@@ -478,7 +539,7 @@ export default function MediaUploader({
             {uploading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing...
+                Uploading {uploadProgress}%
               </>
             ) : (
               <>

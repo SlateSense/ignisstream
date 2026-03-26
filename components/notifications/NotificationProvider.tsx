@@ -55,6 +55,14 @@ export default function NotificationProvider({ children }: NotificationProviderP
   const { user } = useAuth();
   const { toast } = useToast();
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((r) => r.unregister());
+      }).catch(() => {});
+    }
+  }, []);
+
   // Set up real-time subscription only (don't auto-load notifications)
   useEffect(() => {
     if (!user) {

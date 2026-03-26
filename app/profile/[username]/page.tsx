@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import PostCard from "@/components/feed/PostCard";
 import FeedSkeleton from "@/components/feed/FeedSkeleton";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { format } from "date-fns";
 
@@ -28,12 +29,14 @@ export default function ProfilePage() {
   const params = useParams();
   const username = params.username as string;
   const { toast } = useToast();
+  const { user: currentUser, profile: currentProfile, loading: authLoading } = useAuth();
   
   const [profile, setProfile] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
-  const [currentUser, setCurrentUser] = useState<any>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [recentAchievements, setRecentAchievements] = useState<string[]>([]);
   const [stats, setStats] = useState({
     posts: 0,
     followers: 0,
@@ -42,33 +45,112 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    loadProfile();
-    checkCurrentUser();
-  }, [username]);
+    if (authLoading) {
+      return;
+    }
 
-  const checkCurrentUser = async () => {
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    setCurrentUser(user);
+    loadProfile();
+  }, [authLoading, currentProfile?.username, currentUser?.id, username]);
+
+  const getProfileByIdentifier = async (supabase: ReturnType<typeof createClient>, identifier: string) => {
+    const lookups = [
+      () => supabase.from("profiles").select("*").eq("username", identifier).maybeSingle(),
+      () => supabase.from("profiles").select("*").eq("id", identifier).maybeSingle(),
+      async () => {
+        try {
+          return await supabase.from("profiles").select("*").eq("user_id", identifier).maybeSingle();
+        } catch {
+          return { data: null, error: null };
+        }
+      }
+    ];
+
+    for (const lookup of lookups) {
+      const result = await lookup();
+      if (result.error) {
+        continue;
+      }
+
+      if (result.data) {
+        return result.data;
+      }
+    }
+
+    return null;
+  };
+
+  const getFollowTargetColumn = async (supabase: ReturnType<typeof createClient>, followerId: string, targetId: string) => {
+    const modernQuery = await supabase
+      .from("follows")
+      .select("follower_id", { head: true, count: "exact" })
+      .eq("follower_id", followerId)
+      .eq("following_id", targetId);
+
+    if (!modernQuery.error) {
+      return "following_id" as const;
+    }
+
+    const legacyQuery = await supabase
+      .from("follows")
+      .select("follower_id", { head: true, count: "exact" })
+      .eq("follower_id", followerId)
+      .eq("followed_id", targetId);
+
+    if (!legacyQuery.error) {
+      return "followed_id" as const;
+    }
+
+    return null;
+  };
+
+  const getFollowCount = async (supabase: ReturnType<typeof createClient>, column: "following_id" | "followed_id" | "follower_id", value: string) => {
+    const query = await supabase
+      .from("follows")
+      .select("follower_id", { count: "exact", head: true })
+      .eq(column, value);
+
+    if (query.error) {
+      return 0;
+    }
+
+    return query.count || 0;
   };
 
   const loadProfile = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const supabase = createClient();
-      
-      // Load profile
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("username", username)
-        .single();
 
-      if (profileError) throw profileError;
+      const identifier = username === "me" && currentUser ? currentUser.id : username;
+      const profileData =
+        (currentUser &&
+          (identifier === currentUser.id || identifier === currentProfile?.username) &&
+          currentProfile) ||
+        (await getProfileByIdentifier(supabase, identifier));
+
+      if (!profileData) {
+        setProfile(null);
+        setPosts([]);
+        setRecentAchievements([]);
+        setStats({
+          posts: 0,
+          followers: 0,
+          following: 0,
+          totalLikes: 0
+        });
+        setErrorMessage(
+          currentUser
+            ? "We couldn't find a profile for this account yet."
+            : "This profile may be unavailable, private, or no longer exists."
+        );
+        return;
+      }
+
       setProfile(profileData);
 
-      // Load posts
-      const { data: postsData, error: postsError } = await supabase
+      let postsData: any[] = [];
+      const richPostsQuery = await supabase
         .from("posts")
         .select(`
           *,
@@ -82,48 +164,86 @@ export default function ProfilePage() {
         .eq("author_id", profileData.id)
         .order("created_at", { ascending: false });
 
-      if (postsError) throw postsError;
-      setPosts(postsData || []);
+      if (!richPostsQuery.error) {
+        postsData = richPostsQuery.data || [];
+      } else {
+        const fallbackPostsQuery = await supabase
+          .from("posts")
+          .select("*")
+          .eq("author_id", profileData.id)
+          .order("created_at", { ascending: false });
 
-      // Load stats
-      const [followersCount, followingCount, totalLikes] = await Promise.all([
+        if (!fallbackPostsQuery.error) {
+          postsData = (fallbackPostsQuery.data || []).map((post) => ({
+            ...post,
+            author: profileData,
+            assets: [],
+            game: null,
+            _count: []
+          }));
+        }
+      }
+
+      setPosts(postsData);
+
+      const followTargetColumn = profileData.id
+        ? await getFollowTargetColumn(supabase, profileData.id, profileData.id)
+        : null;
+
+      const [followers, following, totalLikesQuery, achievementsQuery] = await Promise.all([
+        getFollowCount(supabase, followTargetColumn || "following_id", profileData.id),
+        getFollowCount(supabase, "follower_id", profileData.id),
+        postsData.length > 0
+          ? supabase
+              .from("likes")
+              .select("post_id", { count: "exact", head: true })
+              .in("post_id", postsData.map((post) => post.id))
+          : Promise.resolve({ count: 0, error: null } as any),
         supabase
-          .from("follows")
-          .select("*", { count: "exact", head: true })
-          .eq("followed_id", profileData.id),
-        supabase
-          .from("follows")
-          .select("*", { count: "exact", head: true })
-          .eq("follower_id", profileData.id),
-        supabase
-          .from("likes")
-          .select("*", { count: "exact", head: true })
-          .in("post_id", postsData?.map(p => p.id) || [])
+          .from("user_achievements")
+          .select("achievement:achievements(name)")
+          .eq("user_id", profileData.id)
+          .not("unlocked_at", "is", null)
+          .order("unlocked_at", { ascending: false })
+          .limit(4)
       ]);
 
       setStats({
-        posts: postsData?.length || 0,
-        followers: followersCount.count || 0,
-        following: followingCount.count || 0,
-        totalLikes: totalLikes.count || 0
+        posts: postsData.length,
+        followers,
+        following,
+        totalLikes: totalLikesQuery.count || 0
       });
 
-      // Check if current user follows this profile
+      setRecentAchievements(
+        (achievementsQuery.data || [])
+          .map((entry: any) => Array.isArray(entry.achievement) ? entry.achievement[0]?.name : entry.achievement?.name)
+          .filter(Boolean)
+      );
+
       if (currentUser && profileData.id !== currentUser.id) {
-        const { data: followData } = await supabase
-          .from("follows")
-          .select("*")
-          .eq("follower_id", currentUser.id)
-          .eq("followed_id", profileData.id)
-          .single();
-        
-        setIsFollowing(!!followData);
+        const targetColumn = await getFollowTargetColumn(supabase, currentUser.id, profileData.id);
+        if (targetColumn) {
+          const { data: followData } = await supabase
+            .from("follows")
+            .select("follower_id")
+            .eq("follower_id", currentUser.id)
+            .eq(targetColumn, profileData.id)
+            .maybeSingle();
+
+          setIsFollowing(Boolean(followData));
+        } else {
+          setIsFollowing(false);
+        }
+      } else {
+        setIsFollowing(false);
       }
     } catch (error: any) {
       console.error("Error loading profile:", error);
+      setErrorMessage("We hit a problem while loading this profile. Please try again in a moment.");
       toast({
-        title: "Profile not found",
-        description: "Unable to load this profile.",
+        title: "Profile unavailable",
+        description: "Unable to load this profile right now.",
         variant: "destructive"
       });
     } finally {
@@ -144,12 +264,17 @@ export default function ProfilePage() {
     const supabase = createClient();
     
     try {
+      const targetColumn = await getFollowTargetColumn(supabase, currentUser.id, profile.id);
+      if (!targetColumn) {
+        throw new Error("Follow system unavailable");
+      }
+
       if (isFollowing) {
         await supabase
           .from("follows")
           .delete()
           .eq("follower_id", currentUser.id)
-          .eq("followed_id", profile.id);
+          .eq(targetColumn, profile.id);
         
         setIsFollowing(false);
         setStats(prev => ({ ...prev, followers: prev.followers - 1 }));
@@ -158,7 +283,7 @@ export default function ProfilePage() {
           .from("follows")
           .insert({
             follower_id: currentUser.id,
-            followed_id: profile.id
+            [targetColumn]: profile.id
           });
         
         setIsFollowing(true);
@@ -187,17 +312,25 @@ export default function ProfilePage() {
   if (!profile) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center max-w-md px-4">
           <h1 className="text-2xl font-bold mb-2">Profile not found</h1>
-          <p className="text-muted-foreground">This user doesn't exist.</p>
+          <p className="text-muted-foreground">
+            {errorMessage || "This user doesn't exist."}
+          </p>
+          {!currentUser && (
+            <div className="mt-4">
+              <Button asChild>
+                <Link href="/auth/signin">Sign in</Link>
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  const isOwnProfile = currentUser?.id === profile.id;
+  const isOwnProfile = currentUser?.id === profile.id || currentUser?.id === profile.user_id;
   const gamerTag = profile.username ? `${profile.username}#${profile.id.slice(0, 4).toUpperCase()}` : "Unknown#0000";
-  const recentBadges = ["MVP", "Clip God", "Team Captain", "Win Streak"];
   const connectedPlatforms =
     profile?.gaming_accounts && typeof profile.gaming_accounts === "object"
       ? Object.keys(profile.gaming_accounts as Record<string, unknown>)
@@ -244,9 +377,11 @@ export default function ProfilePage() {
                   
                   <div className="flex gap-2">
                     {isOwnProfile ? (
-                      <Button variant="outline">
+                      <Button variant="outline" asChild>
+                        <Link href="/profile/edit">
                         <Settings className="mr-2 h-4 w-4" />
                         Edit Profile
+                        </Link>
                       </Button>
                     ) : (
                       <>
@@ -295,12 +430,16 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {recentBadges.map((badge) => (
-                    <Badge key={badge} variant="outline" className="border-gaming-purple/40">
-                      <Trophy className="h-3 w-3 mr-1 text-gaming-cyan" />
-                      {badge}
-                    </Badge>
-                  ))}
+                  {recentAchievements.length > 0 ? (
+                    recentAchievements.map((achievement) => (
+                      <Badge key={achievement} variant="outline" className="border-gaming-purple/40">
+                        <Trophy className="h-3 w-3 mr-1 text-gaming-cyan" />
+                        {achievement}
+                      </Badge>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No achievement highlights available.</p>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">

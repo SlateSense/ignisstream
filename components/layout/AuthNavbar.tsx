@@ -214,7 +214,7 @@ export default function AuthNavbar() {
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem asChild>
-                        <Link href={`/profile/${profile?.username || user.id}`}>
+                        <Link href="/profile/me">
                           <User className="mr-2 h-4 w-4" />
                           <span>Profile</span>
                         </Link>
@@ -323,7 +323,7 @@ export default function AuthNavbar() {
                 <Link href="/notifications" className="block text-foreground/80 hover:text-foreground transition">
                   Notifications
                 </Link>
-                <Link href={`/profile/${profile?.username || user.id}`} className="block text-foreground/80 hover:text-foreground transition">
+                <Link href="/profile/me" className="block text-foreground/80 hover:text-foreground transition">
                   Profile
                 </Link>
                 <div className="pt-4">

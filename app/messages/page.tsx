@@ -26,7 +26,6 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -35,18 +34,11 @@ import OnlineStatus from "@/components/ui/online-status";
 
 export const dynamic = "force-dynamic";
 
-const lobbyChannels = [
-  { id: "lobby-1", name: "Ranked Grind", game: "VALORANT", players: 4, status: "In Queue" },
-  { id: "lobby-2", name: "Late-Night Scrims", game: "Counter-Strike 2", players: 5, status: "Live" },
-  { id: "lobby-3", name: "Chill Arena", game: "Apex Legends", players: 3, status: "Open" },
-];
-
 const quickReactions = ["🔥", "GG", "⚡", "🎯", "💜", "POG"];
 
 export default function MessagesPage() {
   const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedLobby, setSelectedLobby] = useState(lobbyChannels[0].id);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const { 
@@ -66,6 +58,8 @@ export default function MessagesPage() {
     return otherUser?.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
            otherUser?.username?.toLowerCase().includes(searchQuery.toLowerCase());
   });
+  const unreadConversations = conversations.filter((conversation) => conversation.unread_count > 0).length;
+  const recentContacts = filteredConversations.slice(0, 4);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -99,57 +93,106 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="min-h-screen gaming-shell">
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 h-[calc(100vh-8rem)]">
-          <Card className="hidden xl:flex xl:col-span-3 flex-col border-gaming-purple/25">
-            <div className="p-4 border-b">
-              <h2 className="font-semibold text-lg flex items-center gap-2">
-                <Gamepad2 className="h-5 w-5 text-gaming-cyan" />
-                Gaming Lobbies
-              </h2>
-              <p className="text-xs text-muted-foreground mt-1">
-                Join active squad channels and stay synced.
-              </p>
-            </div>
-            <ScrollArea className="flex-1">
-              <div className="p-3 space-y-2">
-                {lobbyChannels.map((lobby) => (
-                  <button
-                    key={lobby.id}
-                    onClick={() => setSelectedLobby(lobby.id)}
-                    className={cn(
-                      "w-full rounded-lg border px-3 py-3 text-left transition",
-                      selectedLobby === lobby.id
-                        ? "border-gaming-cyan bg-gaming-cyan/10"
-                        : "border-border hover:border-gaming-purple/40"
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium">{lobby.name}</p>
-                      <Badge variant="outline">{lobby.status}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">{lobby.game}</p>
-                    <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                      <Users className="h-3 w-3" />
-                      {lobby.players} players active
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.28),transparent_32%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.22),transparent_28%),linear-gradient(135deg,#12081f_0%,#091420_55%,#041019_100%)]">
+      <div className="container mx-auto max-w-7xl px-4 py-6 sm:py-8">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 h-[calc(100vh-7.5rem)]">
+          <div className="hidden xl:flex xl:col-span-3 flex-col gap-4">
+            <Card className="border-white/10 bg-white/5 text-white shadow-2xl backdrop-blur">
+              <div className="p-5">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="rounded-2xl bg-gaming-cyan/15 p-3">
+                    <Gamepad2 className="h-5 w-5 text-gaming-cyan" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold">Message Center</h2>
+                    <p className="text-sm text-white/65">
+                      Keep every squad, duo, and creator chat in one place.
                     </p>
-                  </button>
-                ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/45">Threads</p>
+                    <p className="mt-2 text-2xl font-semibold">{conversations.length}</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/45">Unread</p>
+                    <p className="mt-2 text-2xl font-semibold">{unreadConversations}</p>
+                  </div>
+                </div>
               </div>
-            </ScrollArea>
-            <div className="p-4 border-t text-xs text-muted-foreground flex items-center gap-2">
-              <Trophy className="h-3.5 w-3.5 text-gaming-green" />
-              Lobby voice and calls are available per channel.
-            </div>
-          </Card>
+            </Card>
+
+            <Card className="flex-1 border-white/10 bg-white/5 text-white shadow-2xl backdrop-blur">
+              <div className="flex items-center justify-between border-b border-white/10 p-4">
+                <div>
+                  <h3 className="font-semibold">Recent Contacts</h3>
+                  <p className="text-xs text-white/60">Active chats update automatically.</p>
+                </div>
+                <Users className="h-4 w-4 text-white/60" />
+              </div>
+              <ScrollArea className="flex-1">
+                <div className="space-y-2 p-3">
+                  {recentContacts.length > 0 ? (
+                    recentContacts.map((conversation) => {
+                      const profile = conversation.participant_profiles?.[0];
+                      return (
+                        <button
+                          key={conversation.id}
+                          onClick={() => setActiveConversation(conversation)}
+                          className={cn(
+                            "w-full rounded-2xl border px-3 py-3 text-left transition-all",
+                            activeConversation?.id === conversation.id
+                              ? "border-gaming-cyan/60 bg-gaming-cyan/10"
+                              : "border-white/10 bg-white/5 hover:border-gaming-purple/40 hover:bg-white/10"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage src={profile?.avatar_url} />
+                              <AvatarFallback>{profile?.username?.[0]?.toUpperCase() || "U"}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">{profile?.display_name || profile?.username || "Unknown User"}</p>
+                              <p className="truncate text-xs text-white/55">
+                                {conversation.last_message?.content || "No messages yet"}
+                              </p>
+                            </div>
+                            {conversation.unread_count > 0 && (
+                              <Badge className="bg-gaming-pink/20 text-gaming-pink">
+                                {conversation.unread_count}
+                              </Badge>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-white/10 p-5 text-sm text-white/60">
+                      No recent contacts yet. Start a new chat to build your inbox.
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+              <div className="border-t border-white/10 p-4 text-xs text-white/55 flex items-center gap-2">
+                <Trophy className="h-3.5 w-3.5 text-gaming-green" />
+                Read receipts and latest previews stay synced in real time.
+              </div>
+            </Card>
+          </div>
 
           {/* Conversations List */}
-          <Card className="flex flex-col xl:col-span-3 border-gaming-purple/25">
-            <div className="p-4 border-b">
+          <Card className="flex flex-col xl:col-span-3 border-white/10 bg-white/90 shadow-2xl backdrop-blur">
+            <div className="border-b p-4">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg">Messages</h2>
-                <Button size="icon" variant="ghost">
+                <div>
+                  <h2 className="text-lg font-semibold">Messages</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {filteredConversations.length} conversation{filteredConversations.length === 1 ? "" : "s"} available
+                  </p>
+                </div>
+                <Button size="icon" variant="ghost" className="rounded-full">
                   <Plus className="h-5 w-5" />
                 </Button>
               </div>
@@ -166,14 +209,22 @@ export default function MessagesPage() {
 
             <ScrollArea className="flex-1">
               {loading ? (
-                <div className="p-4 text-center">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
+                <div className="space-y-3 p-4">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="flex items-center gap-3 rounded-2xl border border-border/60 p-3">
+                      <div className="h-12 w-12 animate-pulse rounded-full bg-secondary" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 w-1/2 animate-pulse rounded bg-secondary" />
+                        <div className="h-3 w-3/4 animate-pulse rounded bg-secondary" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : filteredConversations.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
                   <MessageCircle className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>No conversations yet</p>
-                  <p className="text-sm">Start a conversation with someone!</p>
+                  <p className="font-medium text-foreground">No conversations yet</p>
+                  <p className="text-sm">Search for a player and start your first message thread.</p>
                 </div>
               ) : (
                 <div className="space-y-1 p-2">
@@ -184,10 +235,12 @@ export default function MessagesPage() {
                     return (
                       <motion.div
                         key={conversation.id}
-                        whileHover={{ scale: 1.02 }}
+                        whileHover={{ scale: 1.01 }}
                         className={cn(
-                          "flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors",
-                          isActive ? "bg-primary/10" : "hover:bg-secondary"
+                          "flex items-center gap-3 rounded-2xl border p-3 cursor-pointer transition-all",
+                          isActive
+                            ? "border-gaming-purple/25 bg-gradient-to-r from-gaming-purple/10 to-gaming-cyan/10 shadow-sm"
+                            : "border-transparent hover:border-border/80 hover:bg-secondary/70"
                         )}
                         onClick={() => setActiveConversation(conversation)}
                       >
@@ -240,17 +293,19 @@ export default function MessagesPage() {
           {/* Chat Area */}
           <div className="xl:col-span-6">
             {!activeConversation ? (
-              <Card className="h-full flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <MessageCircle className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                  <h3 className="text-lg font-medium mb-2">Select a conversation</h3>
-                  <p>Choose a conversation from the list to start messaging</p>
+              <Card className="h-full flex items-center justify-center border-white/10 bg-white/90 shadow-2xl backdrop-blur">
+                <div className="text-center text-muted-foreground max-w-sm px-6">
+                  <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gaming-purple/10">
+                    <MessageCircle className="h-10 w-10 opacity-60" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-foreground mb-2">Pick a conversation</h3>
+                  <p>Open an existing thread to view previews, read receipts, and recent messages instantly.</p>
                 </div>
               </Card>
             ) : (
-              <Card className="h-full flex flex-col border-gaming-cyan/20">
+              <Card className="h-full flex flex-col border-white/10 bg-white/95 shadow-2xl backdrop-blur">
                 {/* Chat Header */}
-                <div className="flex items-center justify-between p-4 border-b">
+                <div className="flex items-center justify-between border-b p-4">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-10 w-10">
                       <AvatarImage src={activeConversation.participant_profiles?.[0]?.avatar_url} />
@@ -259,10 +314,12 @@ export default function MessagesPage() {
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <h3 className="font-medium">
+                      <h3 className="font-medium text-foreground">
                         {getConversationName(activeConversation)}
                       </h3>
-                      <p className="text-sm text-muted-foreground">@{activeConversation.participant_profiles?.[0]?.username}</p>
+                      <p className="text-sm text-muted-foreground">
+                        @{activeConversation.participant_profiles?.[0]?.username} • {messages.length} message{messages.length === 1 ? "" : "s"}
+                      </p>
                     </div>
                   </div>
                   
@@ -311,7 +368,7 @@ export default function MessagesPage() {
                             isCurrentUser && "items-end"
                           )}>
                             <div className={cn(
-                              "rounded-lg px-3 py-2 text-sm",
+                              "rounded-2xl px-4 py-3 text-sm shadow-sm transition-colors",
                               isCurrentUser
                                 ? "bg-gradient-to-r from-gaming-purple to-gaming-pink text-white"
                                 : "bg-secondary"
@@ -327,10 +384,13 @@ export default function MessagesPage() {
                                 {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
                               </span>
                               {isCurrentUser && (
-                                <CheckCircle2 className={cn(
-                                  "h-3 w-3",
-                                  msg.read ? "text-blue-500" : "text-gray-400"
-                                )} />
+                                <>
+                                  <span>{msg.read ? "Read" : "Sent"}</span>
+                                  <CheckCircle2 className={cn(
+                                    "h-3 w-3",
+                                    msg.read ? "text-blue-500" : "text-gray-400"
+                                  )} />
+                                </>
                               )}
                             </div>
                           </div>

@@ -9,7 +9,8 @@ interface Message {
   id: string;
   content: string;
   sender_id: string;
-  conversation_id: string;
+  conversation_id?: string;
+  recipient_id?: string;
   created_at: string;
   read: boolean;
   sender: {
@@ -26,6 +27,8 @@ interface Conversation {
   last_message_id?: string;
   created_at: string;
   updated_at: string;
+  transport?: 'conversation' | 'direct';
+  other_user_id?: string;
   participant_profiles: {
     id: string;
     username: string;
@@ -66,6 +69,7 @@ export default function MessageProvider({ children }: MessageProviderProps) {
   const [activeConversation, setActiveConversationState] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [transportMode, setTransportMode] = useState<'conversation' | 'direct'>('conversation');
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -140,14 +144,10 @@ export default function MessageProvider({ children }: MessageProviderProps) {
         .order('updated_at', { ascending: false });
 
       if (error) {
-        // Silently fail if table doesn't exist yet
-        if (error.code === 'PGRST116' || error.message.includes('does not exist')) {
-          console.log('Conversations table not ready yet');
-          setConversations([]);
-          setLoading(false);
-          return;
-        }
-        throw error;
+        const fallbackConversations = await loadDirectMessageConversations(supabase);
+        setTransportMode('direct');
+        setConversations(fallbackConversations);
+        return;
       }
 
       // Process conversations and get participant profiles
@@ -180,6 +180,7 @@ export default function MessageProvider({ children }: MessageProviderProps) {
         })
       );
 
+      setTransportMode('conversation');
       setConversations(processedConversations);
     } catch (error) {
       console.error('Error loading conversations:', error);
@@ -193,30 +194,138 @@ export default function MessageProvider({ children }: MessageProviderProps) {
     }
   };
 
+  const loadDirectMessageConversations = async (supabase = createClient()) => {
+    if (!user) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select(`
+        id,
+        content,
+        sender_id,
+        recipient_id,
+        created_at,
+        read,
+        sender:profiles!sender_id(id, username, display_name, avatar_url),
+        recipient:profiles!recipient_id(id, username, display_name, avatar_url)
+      `)
+      .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (error) {
+      if (error.code === 'PGRST116' || error.message.includes('does not exist')) {
+        return [];
+      }
+      throw error;
+    }
+
+    const conversationMap = new Map<string, Conversation>();
+
+    for (const rawMessage of data || []) {
+      const sender = Array.isArray(rawMessage.sender) ? rawMessage.sender[0] : rawMessage.sender;
+      const recipient = Array.isArray((rawMessage as any).recipient) ? (rawMessage as any).recipient[0] : (rawMessage as any).recipient;
+      const otherProfile = rawMessage.sender_id === user.id ? recipient : sender;
+
+      if (!otherProfile?.id) {
+        continue;
+      }
+
+      const normalizedMessage: Message = {
+        ...rawMessage,
+        sender,
+        recipient_id: rawMessage.recipient_id,
+      };
+
+      const existingConversation = conversationMap.get(otherProfile.id);
+      if (existingConversation) {
+        if (!existingConversation.last_message) {
+          existingConversation.last_message = normalizedMessage;
+        }
+        if (rawMessage.recipient_id === user.id && !rawMessage.read) {
+          existingConversation.unread_count += 1;
+        }
+        continue;
+      }
+
+      conversationMap.set(otherProfile.id, {
+        id: `direct-${otherProfile.id}`,
+        participants: [user.id, otherProfile.id],
+        created_at: rawMessage.created_at,
+        updated_at: rawMessage.created_at,
+        transport: 'direct',
+        other_user_id: otherProfile.id,
+        participant_profiles: [otherProfile],
+        last_message: normalizedMessage,
+        unread_count: rawMessage.recipient_id === user.id && !rawMessage.read ? 1 : 0,
+      });
+    }
+
+    return Array.from(conversationMap.values());
+  };
+
   const loadMessages = async (conversationId: string) => {
     setLoading(true);
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from('messages')
-        .select(`
-          id,
-          content,
-          sender_id,
-          conversation_id,
-          created_at,
-          read,
-          sender:profiles!sender_id(id, username, display_name, avatar_url)
-        `)
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true });
+      const selectedConversation =
+        conversations.find((conversation) => conversation.id === conversationId) ||
+        activeConversation;
 
-      if (error) throw error;
+      let processedMessages: Message[] = [];
 
-      const processedMessages = (data || []).map(message => ({
-        ...message,
-        sender: Array.isArray(message.sender) ? message.sender[0] : message.sender
-      }));
+      if (selectedConversation?.transport === 'direct') {
+        const otherUserId = selectedConversation.other_user_id;
+        if (!otherUserId || !user) {
+          setMessages([]);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('messages')
+          .select(`
+            id,
+            content,
+            sender_id,
+            recipient_id,
+            created_at,
+            read,
+            sender:profiles!sender_id(id, username, display_name, avatar_url)
+          `)
+          .or(`and(sender_id.eq.${user.id},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`)
+          .order('created_at', { ascending: true });
+
+        if (error) throw error;
+
+        processedMessages = (data || []).map((message) => ({
+          ...message,
+          sender: Array.isArray(message.sender) ? message.sender[0] : message.sender
+        }));
+      } else {
+        const { data, error } = await supabase
+          .from('messages')
+          .select(`
+            id,
+            content,
+            sender_id,
+            conversation_id,
+            recipient_id,
+            created_at,
+            read,
+            sender:profiles!sender_id(id, username, display_name, avatar_url)
+          `)
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true });
+
+        if (error) throw error;
+
+        processedMessages = (data || []).map(message => ({
+          ...message,
+          sender: Array.isArray(message.sender) ? message.sender[0] : message.sender
+        }));
+      }
 
       setMessages(processedMessages);
     } catch (error) {
@@ -244,51 +353,56 @@ export default function MessageProvider({ children }: MessageProviderProps) {
 
   const handleNewMessage = async (newMessage: any) => {
     try {
-      const supabase = createClient();
-      
-      // Fetch the complete message with sender profile
-      const { data, error } = await supabase
-        .from('messages')
-        .select(`
-          id,
-          content,
-          sender_id,
-          conversation_id,
-          created_at,
-          read,
-          sender:profiles!sender_id(id, username, display_name, avatar_url)
-        `)
-        .eq('id', newMessage.id)
-        .single();
+      if (!user) {
+        return;
+      }
 
-      if (error) throw error;
+      const isRelevant =
+        newMessage.sender_id === user.id ||
+        newMessage.recipient_id === user.id ||
+        (activeConversation?.transport !== 'direct' && newMessage.conversation_id === activeConversation?.id);
 
-      const processedMessage = {
-        ...data,
-        sender: Array.isArray(data.sender) ? data.sender[0] : data.sender
-      };
+      if (!isRelevant) {
+        return;
+      }
 
-      // Add to messages if it's for the active conversation
-      if (activeConversation && processedMessage.conversation_id === activeConversation.id) {
-        setMessages(prev => [...prev, processedMessage]);
-        
-        // Mark as read if it's the active conversation
-        if (processedMessage.sender_id !== user?.id) {
-          await markAsRead(activeConversation.id);
+      await loadConversations();
+
+      if (activeConversation) {
+        const isActiveDirectThread =
+          activeConversation.transport === 'direct' &&
+          activeConversation.other_user_id &&
+          [newMessage.sender_id, newMessage.recipient_id].includes(activeConversation.other_user_id);
+
+        const isActiveConversationThread =
+          activeConversation.transport !== 'direct' &&
+          newMessage.conversation_id === activeConversation.id;
+
+        if (isActiveDirectThread || isActiveConversationThread) {
+          await loadMessages(activeConversation.id);
+          if (newMessage.sender_id !== user.id) {
+            await markAsRead(activeConversation.id);
+          }
+          return;
         }
       }
 
-      // Update conversations list
-      await loadConversations();
+      if (newMessage.sender_id !== user.id) {
+        const senderConversation = conversations.find((conversation) =>
+          conversation.other_user_id === newMessage.sender_id ||
+          conversation.participant_profiles?.some((profile) => profile.id === newMessage.sender_id)
+        );
 
-      // Show toast if message is not from current user and not in active conversation
-      if (processedMessage.sender_id !== user?.id && 
-          (!activeConversation || processedMessage.conversation_id !== activeConversation.id)) {
+        const senderName =
+          senderConversation?.participant_profiles?.[0]?.display_name ||
+          senderConversation?.participant_profiles?.[0]?.username ||
+          'a player';
+
         toast({
-          title: `New message from ${processedMessage.sender.display_name}`,
-          description: processedMessage.content.length > 50 
-            ? processedMessage.content.substring(0, 50) + '...' 
-            : processedMessage.content,
+          title: `New message from ${senderName}`,
+          description: typeof newMessage.content === 'string' && newMessage.content.length > 50
+            ? `${newMessage.content.substring(0, 50)}...`
+            : newMessage.content,
         });
       }
     } catch (error) {
@@ -301,22 +415,41 @@ export default function MessageProvider({ children }: MessageProviderProps) {
 
     try {
       const supabase = createClient();
-      
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          content: content.trim(),
-          sender_id: user.id,
-          conversation_id: conversationId
-        });
+      const conversation =
+        conversations.find((item) => item.id === conversationId) ||
+        activeConversation;
 
-      if (error) throw error;
+      if (conversation?.transport === 'direct') {
+        const recipientId = conversation.other_user_id;
+        if (!recipientId) {
+          throw new Error('Missing recipient');
+        }
 
-      // Update conversation's last message timestamp
-      await supabase
-        .from('conversations')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', conversationId);
+        const { error } = await supabase
+          .from('messages')
+          .insert({
+            content: content.trim(),
+            sender_id: user.id,
+            recipient_id: recipientId
+          });
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('messages')
+          .insert({
+            content: content.trim(),
+            sender_id: user.id,
+            conversation_id: conversationId
+          });
+
+        if (error) throw error;
+
+        await supabase
+          .from('conversations')
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', conversationId);
+      }
 
     } catch (error) {
       console.error('Error sending message:', error);
@@ -333,6 +466,34 @@ export default function MessageProvider({ children }: MessageProviderProps) {
 
     try {
       const supabase = createClient();
+
+      if (transportMode === 'direct') {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .eq('id', userId)
+          .single();
+
+        if (error) throw error;
+
+        const directConversation = {
+          id: `direct-${userId}`,
+          participants: [user.id, userId],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          transport: 'direct' as const,
+          other_user_id: userId,
+          participant_profiles: profile ? [profile] : [],
+          unread_count: 0
+        };
+
+        setConversations((previous) => {
+          const exists = previous.some((conversation) => conversation.id === directConversation.id);
+          return exists ? previous : [directConversation, ...previous];
+        });
+
+        return directConversation;
+      }
       
       // Check if conversation already exists
       const { data: existingConv, error: searchError } = await supabase
@@ -396,12 +557,25 @@ export default function MessageProvider({ children }: MessageProviderProps) {
 
     try {
       const supabase = createClient();
-      await supabase
-        .from('messages')
-        .update({ read: true })
-        .eq('conversation_id', conversationId)
-        .eq('read', false)
-        .neq('sender_id', user.id);
+      const conversation =
+        conversations.find((item) => item.id === conversationId) ||
+        activeConversation;
+
+      if (conversation?.transport === 'direct' && conversation.other_user_id) {
+        await supabase
+          .from('messages')
+          .update({ read: true })
+          .eq('recipient_id', user.id)
+          .eq('sender_id', conversation.other_user_id)
+          .eq('read', false);
+      } else {
+        await supabase
+          .from('messages')
+          .update({ read: true })
+          .eq('conversation_id', conversationId)
+          .eq('read', false)
+          .neq('sender_id', user.id);
+      }
 
       // Update local state
       setConversations(prev => 

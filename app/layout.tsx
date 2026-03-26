@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { QueryProvider } from "@/components/providers/QueryProvider";
+import { SessionExperienceProvider } from "@/components/providers/SessionExperienceProvider";
 import AchievementProvider from "@/components/achievements/AchievementProvider";
 import HashtagProvider from "@/components/hashtags/HashtagProvider";
 import NotificationProvider from "@/components/notifications/NotificationProvider";
@@ -39,12 +40,42 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const serviceWorkerResetScript = `
+    (function () {
+      var host = window.location.hostname;
+      var isLocal = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+      if (!isLocal || !('serviceWorker' in navigator) || !window.caches) {
+        return;
+      }
+
+      navigator.serviceWorker.getRegistrations()
+        .then(function (registrations) {
+          return Promise.all(registrations.map(function (registration) {
+            return registration.unregister();
+          }));
+        })
+        .then(function () {
+          return caches.keys();
+        })
+        .then(function (cacheNames) {
+          return Promise.all(cacheNames.map(function (cacheName) {
+            return caches.delete(cacheName);
+          }));
+        })
+        .catch(function () {});
+    })();
+  `;
+
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: serviceWorkerResetScript }} />
+      </head>
       <body className={inter.className}>
         <QueryProvider>
           <ThemeProvider>
             <AuthProvider>
+              <SessionExperienceProvider />
               <NotificationProvider>
                 <HashtagProvider>
                   <AchievementProvider>
